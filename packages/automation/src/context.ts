@@ -100,7 +100,7 @@ export function rankContextMemories(query: string, memories: ContextMemory[], li
     .map(item => item.memory);
 }
 
-export function createContextManager(repo: Repository, workspace: string, summarize: Summarizer) {
+export function createContextManager(repo: Repository, workspace: string, conversationId: string, summarize: Summarizer) {
   const parseMessage = (row: any) => messageSchema.parse({
     id: String(row.id),
     sequence: Number(row.sequence),
@@ -112,7 +112,7 @@ export function createContextManager(repo: Repository, workspace: string, summar
 
   async function loadSummary(): Promise<StoredSummary | null> {
     return repo.scoped(workspace, async tx => {
-      const row = (await tx.execute(sql`SELECT version,through_message_sequence,document FROM agent_context_summaries WHERE workspace_id=${workspace}`)).rows[0] as any;
+      const row = (await tx.execute(sql`SELECT version,through_message_sequence,document FROM agent_conversation_context_summaries WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid`)).rows[0] as any;
       return row ? {
         version: Number(row.version),
         throughMessageSequence: Number(row.through_message_sequence),
@@ -124,8 +124,8 @@ export function createContextManager(repo: Repository, workspace: string, summar
   async function compactionWindow(summary: StoredSummary | null): Promise<ContextMessage[]> {
     return repo.scoped(workspace, async tx => {
       const rows = (await tx.execute(summary
-        ? sql`SELECT id,sequence,role,kind,content,created_at FROM commerce_agent_messages WHERE workspace_id=${workspace} AND sequence>${summary.throughMessageSequence} ORDER BY sequence LIMIT ${COMPACTION_WINDOW_MESSAGES}`
-        : sql`SELECT id,sequence,role,kind,content,created_at FROM commerce_agent_messages WHERE workspace_id=${workspace} ORDER BY sequence LIMIT ${COMPACTION_WINDOW_MESSAGES}`)).rows;
+        ? sql`SELECT id,sequence,role,kind,content,created_at FROM commerce_agent_messages WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid AND sequence>${summary.throughMessageSequence} ORDER BY sequence LIMIT ${COMPACTION_WINDOW_MESSAGES}`
+        : sql`SELECT id,sequence,role,kind,content,created_at FROM commerce_agent_messages WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid ORDER BY sequence LIMIT ${COMPACTION_WINDOW_MESSAGES}`)).rows;
       return rows.map(parseMessage);
     });
   }
@@ -133,14 +133,14 @@ export function createContextManager(repo: Repository, workspace: string, summar
   async function recentMessages(summary: StoredSummary | null): Promise<ContextMessage[]> {
     return repo.scoped(workspace, async tx => {
       const rows = (await tx.execute(summary
-        ? sql`SELECT id,sequence,role,kind,content,created_at FROM commerce_agent_messages WHERE workspace_id=${workspace} AND sequence>${summary.throughMessageSequence} ORDER BY sequence DESC LIMIT ${MAX_RECENT_MESSAGES}`
-        : sql`SELECT id,sequence,role,kind,content,created_at FROM commerce_agent_messages WHERE workspace_id=${workspace} ORDER BY sequence DESC LIMIT ${MAX_RECENT_MESSAGES}`)).rows;
+        ? sql`SELECT id,sequence,role,kind,content,created_at FROM commerce_agent_messages WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid AND sequence>${summary.throughMessageSequence} ORDER BY sequence DESC LIMIT ${MAX_RECENT_MESSAGES}`
+        : sql`SELECT id,sequence,role,kind,content,created_at FROM commerce_agent_messages WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid ORDER BY sequence DESC LIMIT ${MAX_RECENT_MESSAGES}`)).rows;
       return rows.reverse().map(parseMessage);
     });
   }
 
   async function activeMemories(): Promise<ContextMemory[]> {
-    return repo.scoped(workspace, async tx => (await tx.execute(sql`SELECT id,kind,subject,content,confidence,valid_from FROM agent_memories WHERE workspace_id=${workspace} AND valid_to='' ORDER BY valid_from DESC LIMIT 200`)).rows.map((row: any) => ({
+    return repo.scoped(workspace, async tx => (await tx.execute(sql`SELECT id,kind,subject,content,confidence,valid_from FROM agent_conversation_memories WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid AND valid_to='' ORDER BY valid_from DESC LIMIT 200`)).rows.map((row: any) => ({
       id: String(row.id),
       kind: memorySchema.shape.kind.parse(row.kind),
       subject: String(row.subject),
@@ -153,27 +153,27 @@ export function createContextManager(repo: Repository, workspace: string, summar
   async function persistCompaction(expectedVersion: number, cutoff: ContextMessage, document: ContextSummary, sourceIds: string[]) {
     await repo.scoped(workspace, async tx => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${workspace}))`);
-      const current = (await tx.execute(sql`SELECT version FROM agent_context_summaries WHERE workspace_id=${workspace}`)).rows[0] as any;
+      const current = (await tx.execute(sql`SELECT version FROM agent_conversation_context_summaries WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid`)).rows[0] as any;
       if (Number(current?.version || 0) !== expectedVersion) return;
 
       const stamp = now();
       const version = expectedVersion + 1;
-      await tx.execute(sql`INSERT INTO agent_context_summaries(workspace_id,version,through_message_sequence,document,updated_at) VALUES(${workspace},${version},${cutoff.sequence},${JSON.stringify(document)}::jsonb,${stamp}) ON CONFLICT(workspace_id) DO UPDATE SET version=excluded.version,through_message_sequence=excluded.through_message_sequence,document=excluded.document,updated_at=excluded.updated_at`);
+      await tx.execute(sql`INSERT INTO agent_conversation_context_summaries(workspace_id,conversation_id,version,through_message_sequence,document,updated_at) VALUES(${workspace},${conversationId}::uuid,${version},${cutoff.sequence},${JSON.stringify(document)}::jsonb,${stamp}) ON CONFLICT(workspace_id,conversation_id) DO UPDATE SET version=excluded.version,through_message_sequence=excluded.through_message_sequence,document=excluded.document,updated_at=excluded.updated_at`);
 
-      const active = (await tx.execute(sql`SELECT id,kind,subject,content FROM agent_memories WHERE workspace_id=${workspace} AND valid_to=''`)).rows as any[];
+      const active = (await tx.execute(sql`SELECT id,kind,subject,content FROM agent_conversation_memories WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid AND valid_to=''`)).rows as any[];
       const key = (kind: string, subject: string) => kind + '\u0000' + subject.trim().toLocaleLowerCase();
       const desiredKeys = new Set(document.memories.map(memory => key(memory.kind, memory.subject)));
       for (const existing of active) {
         if (!desiredKeys.has(key(String(existing.kind), String(existing.subject)))) {
-          await tx.execute(sql`UPDATE agent_memories SET valid_to=${stamp} WHERE id=${String(existing.id)}::uuid`);
+          await tx.execute(sql`UPDATE agent_conversation_memories SET valid_to=${stamp} WHERE id=${String(existing.id)}::uuid`);
         }
       }
 
       for (const memory of document.memories) {
         const existing = active.find(item => key(String(item.kind), String(item.subject)) === key(memory.kind, memory.subject));
         if (existing && String(existing.content) === memory.content) continue;
-        if (existing) await tx.execute(sql`UPDATE agent_memories SET valid_to=${stamp} WHERE id=${String(existing.id)}::uuid`);
-        await tx.execute(sql`INSERT INTO agent_memories(id,workspace_id,kind,subject,content,confidence,source_message_ids,valid_from,valid_to) VALUES(${randomUUID()}::uuid,${workspace},${memory.kind},${memory.subject},${memory.content},${memory.confidence},${JSON.stringify(sourceIds)}::jsonb,${stamp},'')`);
+        if (existing) await tx.execute(sql`UPDATE agent_conversation_memories SET valid_to=${stamp} WHERE id=${String(existing.id)}::uuid`);
+        await tx.execute(sql`INSERT INTO agent_conversation_memories(id,workspace_id,conversation_id,kind,subject,content,confidence,source_message_ids,valid_from,valid_to) VALUES(${randomUUID()}::uuid,${workspace},${conversationId}::uuid,${memory.kind},${memory.subject},${memory.content},${memory.confidence},${JSON.stringify(sourceIds)}::jsonb,${stamp},'')`);
       }
     });
   }
@@ -233,7 +233,7 @@ export function createContextManager(repo: Repository, workspace: string, summar
     const assembled = assemble(stateContext, summary, memories, messages);
     const runId = randomUUID();
     await repo.scoped(workspace, async tx => {
-      await tx.execute(sql`INSERT INTO agent_context_runs(id,workspace_id,message_id,summary_version,recent_message_ids,memory_ids,estimated_tokens,status,maintenance_error,usage,created_at,completed_at) VALUES(${runId}::uuid,${workspace},${currentMessageId}::uuid,${summary?.version || 0},${JSON.stringify(assembled.recent.map(message => message.id))}::jsonb,${JSON.stringify(assembled.ranked.map(memory => memory.id))}::jsonb,${assembled.estimatedTokens},'prepared',${maintenanceError},'null'::jsonb,${now()},'')`);
+      await tx.execute(sql`INSERT INTO agent_conversation_context_runs(id,workspace_id,conversation_id,message_id,summary_version,recent_message_ids,memory_ids,estimated_tokens,status,maintenance_error,usage,created_at,completed_at) VALUES(${runId}::uuid,${workspace},${conversationId}::uuid,${currentMessageId}::uuid,${summary?.version || 0},${JSON.stringify(assembled.recent.map(message => message.id))}::jsonb,${JSON.stringify(assembled.ranked.map(memory => memory.id))}::jsonb,${assembled.estimatedTokens},'prepared',${maintenanceError},'null'::jsonb,${now()},'')`);
     });
 
     return {
@@ -249,7 +249,7 @@ export function createContextManager(repo: Repository, workspace: string, summar
 
   async function finish(runId: string, status: 'completed' | 'failed', usage: unknown) {
     await repo.scoped(workspace, async tx => {
-      await tx.execute(sql`UPDATE agent_context_runs SET status=${status},usage=${JSON.stringify(usage ?? null)}::jsonb,completed_at=${now()} WHERE id=${runId}::uuid`);
+      await tx.execute(sql`UPDATE agent_conversation_context_runs SET status=${status},usage=${JSON.stringify(usage ?? null)}::jsonb,completed_at=${now()} WHERE id=${runId}::uuid AND conversation_id=${conversationId}::uuid`);
     });
   }
 
@@ -258,7 +258,7 @@ export function createContextManager(repo: Repository, workspace: string, summar
     return repo.scoped(workspace, async tx => ({
       summary,
       memories,
-      runs: (await tx.execute(sql`SELECT id,status,summary_version,estimated_tokens,recent_message_ids,memory_ids,maintenance_error FROM agent_context_runs WHERE workspace_id=${workspace} ORDER BY created_at DESC LIMIT 100`)).rows
+      runs: (await tx.execute(sql`SELECT id,status,summary_version,estimated_tokens,recent_message_ids,memory_ids,maintenance_error FROM agent_conversation_context_runs WHERE workspace_id=${workspace} AND conversation_id=${conversationId}::uuid ORDER BY created_at DESC LIMIT 100`)).rows
     }));
   }
 

@@ -9,7 +9,7 @@ export function createFlowStore(repo:Repository,workspace:string){
   async function list(){return repo.scoped(workspace,async tx=>(await tx.execute(sql`SELECT document FROM automation_jobs ORDER BY created_at DESC LIMIT 100`)).rows.map(r=>r.document as Job));}
   async function get(id:string){return repo.scoped(workspace,async tx=>{const row=(await tx.execute(sql`SELECT document FROM automation_jobs WHERE id=${id}`)).rows[0];if(!row)throw new DomainError('NOT_FOUND','流程不存在',404);return row.document as Job;});}
   async function audit(action:string,objectId:string,summary:string){await repo.scoped(workspace,async tx=>{await tx.execute(sql`INSERT INTO audit(id,workspace_id,action,object_id,summary,created_at) VALUES(${randomUUID()},${workspace},${action},${objectId},${summary},${now()})`);});}
-  async function create(raw:unknown,actor:User,key:string){
+  async function create(raw:unknown,actor:User,key:string,conversationId?:string){
     const parsed=startSchema.safeParse(raw);if(!parsed.success)throw new DomainError('INPUT_INVALID','流程参数不完整');if(!/^[0-9a-f-]{36}$/.test(key))throw new DomainError('IDEMPOTENCY_REQUIRED','缺少流程操作标识');
     const input:Start=parsed.data,requestHash=createHash('sha256').update(JSON.stringify(input)).digest('hex');
     return repo.scoped(workspace,async tx=>{
@@ -23,7 +23,7 @@ export function createFlowStore(repo:Repository,workspace:string){
       if(input.kind==='render'&&(!input.script||!input.assetId))throw new DomainError('MEDIA_REQUIRED','请提供脚本与已授权图片');
       const media:StepKey[]=['poster',...(input.voiceover?['speech' as const]:[]),...(input.videoMode==='minimax'?['video_submit' as const,'video_wait' as const]:[]),'render','package'];
       const keys:StepKey[]=input.kind==='discovery'?['discover','sources','research','package']:input.kind==='render'?media:input.kind==='content'?['sources','copy',...media]:['sources','cost','research','copy',...media];
-      const job:Job={id:key,workspaceId:workspace,createdBy:actor.id,requestHash,productId:product?.id||null,productVersion:product?.version||null,kind:input.kind,state:'queued',version:1,
+      const job:Job={id:key,workspaceId:workspace,...(conversationId?{conversationId}:{}),createdBy:actor.id,requestHash,productId:product?.id||null,productVersion:product?.version||null,kind:input.kind,state:'queued',version:1,
         input:{query:input.query||'China mainland manufacturer supplier single item dropshipping overseas shipping countries',urls:input.urls,product,script:input.script,assetId:input.assetId,budgetCents:input.budgetCents,voiceover:input.voiceover,videoMode:input.videoMode},
         steps:keys.map(key=>({key,label:stepLabels[key],state:'pending',attempts:0,summary:''})),sources:[],artifacts:[],error:'',lease:null,createdAt:now(),updatedAt:now(),...(input.script?{copy:input.script}:{})};
       await tx.execute(sql`INSERT INTO automation_jobs(id,workspace_id,state,document,created_at) VALUES(${key},${workspace},${job.state},${JSON.stringify(job)}::jsonb,${job.createdAt})`);

@@ -61,7 +61,7 @@ export type Copy = z.infer<typeof copySchema>;
 export type StepKey = 'discover'|'sources'|'cost'|'research'|'copy'|'poster'|'speech'|'video_submit'|'video_wait'|'render'|'package';
 export type Step = { key:StepKey;label:string;state:'pending'|'running'|'done'|'blocked'|'failed';attempts:number;summary:string;startedAt?:string;finishedAt?:string };
 export type Asset = { id:string;workspaceId:string;productId:string;name:string;file:string;hash:string;rights:string;createdAt:string };
-export type Job = { id:string;workspaceId:string;createdBy:string;requestHash:string;productId:string|null;productVersion:number|null;
+export type Job = { id:string;workspaceId:string;conversationId?:string;createdBy:string;requestHash:string;productId:string|null;productVersion:number|null;
   kind:'discovery'|'launch'|'render'|'content';state:'queued'|'running'|'blocked'|'paused'|'waiting_review'|'succeeded'|'cancelled';version:number;
   input:{query:string;urls:string[];product?:Product;script?:Copy;assetId?:string;budgetCents:number;voiceover?:boolean;videoMode?:'slideshow'|'minimax'};
   remoteVideo?:{taskId:string;endpoint:string;fileId?:string;status:string;submittedAt:string};nextRunAt?:string;

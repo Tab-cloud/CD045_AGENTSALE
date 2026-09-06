@@ -11,8 +11,9 @@ export type CommerceAgentState={
   status:'idle'|'active'|'paused'|'blocked';mode:'autonomous';objective:string;cycleBudgetCents:number;cycleIntervalSeconds:number;
   owner:{id:string;username:string}|null;lastAction:string;lastError:string;lastCycleAt?:string;nextCycleAt?:string;version:number;updatedAt:string;
 };
-export type CommerceAgentMessage={id:string;role:'user'|'assistant'|'system';kind:string;content:string;payload:unknown;createdAt:string};
-export type CommerceAgentSnapshot={state:CommerceAgentState;messages:CommerceAgentMessage[];capabilities:{model:boolean;search:boolean;marketConnector:boolean;publishingConnector:boolean;orderConnector:boolean;supplierConnector:boolean;assetConnector:boolean;logisticsConnector:boolean;customerConnector:boolean};connectors:ConnectorStatus[];orders:CommerceOrder[];records:CommerceRecord[];jobs:{id:string;state:string;kind:string;createdAt:string}[]};
+export type AgentConversation={id:string;title:string;state:CommerceAgentState['status'];createdAt:string;updatedAt:string};
+export type CommerceAgentMessage={id:string;conversationId:string;role:'user'|'assistant'|'system';kind:string;content:string;payload:unknown;createdAt:string};
+export type CommerceAgentSnapshot={conversation:AgentConversation;conversations:AgentConversation[];state:CommerceAgentState;messages:CommerceAgentMessage[];capabilities:{model:boolean;search:boolean;marketConnector:boolean;publishingConnector:boolean;orderConnector:boolean;supplierConnector:boolean;assetConnector:boolean;logisticsConnector:boolean;customerConnector:boolean};connectors:ConnectorStatus[];orders:CommerceOrder[];records:CommerceRecord[];jobs:{id:string;state:string;kind:string;createdAt:string}[]};
 
 export const agentHelp=`可用命令：
 /status 查看 Agent 状态与阻塞项
