@@ -4,8 +4,8 @@ import {ArrowUpRight,Check,X} from 'lucide-react';
 import type {PublicSettings,Settings} from '@agentsale/automation';
 
 type AdminPayload={settings:PublicSettings};
-type QuickForm={provider:'minimax'|'compatible';baseUrl:string;model:string;apiKey:string;searchKey:string;callLimit:string;dailyLimit:string};
-const empty:QuickForm={provider:'minimax',baseUrl:'https://api.minimaxi.com/v1',model:'MiniMax-M3',apiKey:'',searchKey:'',callLimit:'0.25',dailyLimit:'2.00'};
+type QuickForm={provider:'minimax'|'compatible';baseUrl:string;model:string;apiKey:string;searchKey:string};
+const empty:QuickForm={provider:'minimax',baseUrl:'https://api.minimaxi.com/v1',model:'MiniMax-M3',apiKey:'',searchKey:''};
 const minimaxUrl='https://api.minimaxi.com/v1';
 
 function looksLikeMiniMax(settings:Pick<PublicSettings,'protocol'|'baseUrl'|'model'>){
@@ -14,26 +14,21 @@ function looksLikeMiniMax(settings:Pick<PublicSettings,'protocol'|'baseUrl'|'mod
 function normalizedMiniMaxModel(model:string){return /^minimax[-_ ]?m3$/i.test(model.trim())?'MiniMax-M3':model.trim()||'MiniMax-M3';}
 function formFromSettings(settings:PublicSettings):{form:QuickForm;corrected:boolean;preserveApiKey:boolean}{
   const minimax=looksLikeMiniMax(settings),mismatched=minimax&&!/api\.minimax/i.test(settings.baseUrl);
-  const callLimit=settings.callLimitCents>0?(settings.callLimitCents/100).toFixed(2):empty.callLimit;
-  const dailyLimit=settings.dailyLimitCents>0?(settings.dailyLimitCents/100).toFixed(2):empty.dailyLimit;
-  return {form:{provider:minimax?'minimax':'compatible',baseUrl:minimax?minimaxUrl:settings.baseUrl,model:minimax?normalizedMiniMaxModel(settings.model):settings.model,apiKey:'',searchKey:'',callLimit,dailyLimit},corrected:mismatched||settings.callLimitCents<1||settings.dailyLimitCents<1,preserveApiKey:mismatched&&settings.hasApiKey};
+  return {form:{provider:minimax?'minimax':'compatible',baseUrl:minimax?minimaxUrl:settings.baseUrl,model:minimax?normalizedMiniMaxModel(settings.model):settings.model,apiKey:'',searchKey:''},corrected:mismatched,preserveApiKey:mismatched&&settings.hasApiKey};
 }
 
 export function QuickSettings({open,onClose,onVerified}:{open:boolean;onClose:()=>void;onVerified:()=>void}){
   const [data,setData]=useState<AdminPayload|null>(null),[form,setForm]=useState<QuickForm>(empty),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[preserveApiKey,setPreserveApiKey]=useState(false);
-  useEffect(()=>{if(!open)return;setError('');setNotice('');void fetch('/api/v1/admin',{cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.message);return body as AdminPayload;}).then(body=>{const normalized=formFromSettings(body.settings);setData(body);setForm(normalized.form);setPreserveApiKey(normalized.preserveApiKey);if(normalized.corrected)setNotice('已在表单中修正 MiniMax 服务地址和零额度；点击保存即可，无需重填已保存的密钥。');}).catch(reason=>setError(reason instanceof Error?reason.message:'无法读取配置'));},[open]);
+  useEffect(()=>{if(!open)return;setError('');setNotice('');void fetch('/api/v1/admin',{cache:'no-store'}).then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.message);return body as AdminPayload;}).then(body=>{const normalized=formFromSettings(body.settings);setData(body);setForm(normalized.form);setPreserveApiKey(normalized.preserveApiKey);if(normalized.corrected)setNotice('已在表单中修正 MiniMax 服务地址；点击保存即可，无需重填已保存的密钥。');}).catch(reason=>setError(reason instanceof Error?reason.message:'无法读取配置'));},[open]);
   if(!open)return null;
   function update<K extends keyof QuickForm>(key:K,value:QuickForm[K]){setForm(current=>({...current,[key]:value}));}
   function choose(provider:QuickForm['provider']){setPreserveApiKey(false);setForm(current=>provider==='minimax'?{...current,provider,baseUrl:minimaxUrl,model:normalizedMiniMaxModel(current.model)}:{...current,provider,baseUrl:/api\.minimax/i.test(current.baseUrl)?'https://api.openai.com/v1':current.baseUrl,model:/minimax/i.test(current.model)?'':current.model});}
   async function submit(event:FormEvent){event.preventDefault();if(!data||busy)return;setBusy(true);setError('');setNotice('');try{
     const {hasApiKey:_,hasSearchKey:__,hasMinimaxKey:___,connectorSecretStatus:____,verifiedAt:_____,revision:______,...stored}=data.settings;
-    const callLimitCents=Math.round(Number(form.callLimit)*100),dailyLimitCents=Math.round(Number(form.dailyLimit)*100);
-    if(!Number.isFinite(callLimitCents)||!Number.isFinite(dailyLimitCents)||callLimitCents<1||dailyLimitCents<1)throw new Error('单次额度和每日额度必须大于 0，模型才能执行任务。');
-    if(dailyLimitCents<callLimitCents)throw new Error('每日额度不能低于单次额度。');
     const minimax=form.provider==='minimax';
-    const settings:Settings={...stored,protocol:minimax?'minimax':'openai',baseUrl:minimax?minimaxUrl:form.baseUrl.trim(),model:minimax?normalizedMiniMaxModel(form.model):form.model.trim(),format:minimax?'prompt_json':stored.format,callLimitCents,dailyLimitCents};
+    const settings:Settings={...stored,protocol:minimax?'minimax':'openai',baseUrl:minimax?minimaxUrl:form.baseUrl.trim(),model:minimax?normalizedMiniMaxModel(form.model):form.model.trim(),format:minimax?'prompt_json':stored.format,callLimitCents:0,dailyLimitCents:0};
     const save=await fetch('/api/v1/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',settings,...(preserveApiKey&&!form.apiKey?{preserveApiKey:true}:{}),...(form.apiKey?{apiKey:form.apiKey}:{}),...(form.searchKey?{searchKey:form.searchKey}:{})})}),saved=await save.json();if(!save.ok)throw new Error(saved.message||'配置保存失败');
-    setPreserveApiKey(false);setForm(current=>({...current,provider:minimax?'minimax':'compatible',baseUrl:settings.baseUrl,model:settings.model,apiKey:'',searchKey:'',callLimit:(callLimitCents/100).toFixed(2),dailyLimit:(dailyLimitCents/100).toFixed(2)}));setData({settings:saved.settings});setNotice('配置已保存，正在验证连接…');
+    setPreserveApiKey(false);setForm(current=>({...current,provider:minimax?'minimax':'compatible',baseUrl:settings.baseUrl,model:settings.model,apiKey:'',searchKey:''}));setData({settings:saved.settings});setNotice('配置已保存，正在验证连接…');
     const verify=await fetch('/api/v1/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify'})}),verified=await verify.json();if(!verify.ok)throw new Error(`配置已保存，密钥仍在；连接验证失败：${verified.message||'请检查模型名称或服务状态'}`);setNotice('模型已保存并验证，Agent 可以理解自由文本。');setData({settings:{...saved.settings,verifiedAt:new Date().toISOString()}});onVerified();
   }catch(reason){setError(reason instanceof Error?reason.message:'配置未完成');}finally{setBusy(false);}}
   return <div className="settings-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}><section className="quick-settings" role="dialog" aria-modal="true" aria-labelledby="quick-settings-title"><header><div><span>Agent 设置</span><h2 id="quick-settings-title">连接模型</h2></div><button type="button" onClick={onClose} aria-label="关闭"><X size={18}/></button></header>
@@ -45,8 +40,6 @@ export function QuickSettings({open,onClose,onVerified}:{open:boolean;onClose:()
       <label>模型名称<input required value={form.model} onChange={event=>update('model',event.target.value)} placeholder="例如 MiniMax-M3"/></label>
       <label>API 密钥<input type="password" autoComplete="new-password" value={form.apiKey} onChange={event=>update('apiKey',event.target.value)} placeholder={data.settings.hasApiKey?'已保存；留空保持':'输入模型密钥'}/></label>
       <label>搜索密钥 <small>可选</small><input type="password" autoComplete="new-password" value={form.searchKey} onChange={event=>update('searchKey',event.target.value)} placeholder={data.settings.hasSearchKey?'已保存；留空保持':'用于自动寻找供应商'}/></label>
-      <div className="quick-budget"><label>单次上限 · USD<input type="number" min="0.01" max="100" step="0.01" value={form.callLimit} onChange={event=>update('callLimit',event.target.value)}/></label><label>每日上限 · USD<input type="number" min="0.01" max="1000" step="0.01" value={form.dailyLimit} onChange={event=>update('dailyLimit',event.target.value)}/></label></div>
-      <p className="quick-budget-hint">这是自动执行的费用护栏，不会预先扣费。默认单次 $0.25、每日 $2.00。</p>
       <button className="quick-settings-primary" disabled={busy}>{busy?'正在验证…':'保存并验证'}</button>
     </form>}
     <a className="advanced-settings-link" href="http://127.0.0.1:3047/?advanced=1">渠道与高级配置 <ArrowUpRight size={13}/></a>

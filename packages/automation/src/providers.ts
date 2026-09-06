@@ -7,8 +7,6 @@ export function assertProvider(config:SecretSettings,verified=true){
   const endpoint=validUrl(config.baseUrl,config.localModel);
   if(!config.localModel&&endpoint.protocol!=='https:')throw new FlowError('MODEL_UNCONFIGURED','远程模型接口必须使用 HTTPS');
   if(!config.localModel&&!config.apiKey)throw new FlowError('MODEL_UNCONFIGURED','尚未保存模型 API 密钥');
-  if(!config.localModel&&(config.callLimitCents<1||config.dailyLimitCents<1))throw new FlowError('MODEL_UNCONFIGURED','模型单次额度和每日额度必须大于 0');
-  if(!config.localModel&&config.dailyLimitCents<config.callLimitCents)throw new FlowError('MODEL_UNCONFIGURED','模型每日额度不能低于单次额度');
   if(verified&&(!config.verifiedAt||Date.now()-Date.parse(config.verifiedAt)>86400000))throw new FlowError('MODEL_UNVERIFIED','模型尚未验证或验证已过期，请管理员测试连接');
 }
 export function parseModelJson(content:unknown):unknown{

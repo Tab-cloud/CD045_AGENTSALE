@@ -169,6 +169,7 @@ describe('真实协议与持久流程',()=>{
   it('数据库原子预留拒绝并发超额，并保留结果未知的费用',async()=>{
     const e=await engine(),s={...await e.vault.get(),dailyLimitCents:10};const results=await Promise.allSettled([e.store.reserve('j',7,'model',s,20),e.store.reserve('j',7,'model',s,20)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
     const id=(results.find(r=>r.status==='fulfilled') as PromiseFulfilledResult<string>).value;await e.store.settle(id,'unknown',null);await expect(e.store.reserve('j',4,'model',s,20)).rejects.toMatchObject({code:'BUDGET_EXCEEDED'});
+    const unlimited={...s,dailyLimitCents:0};await expect(e.store.reserve('unlimited',7,'model',unlimited,20)).resolves.toBeTypeOf('string');await expect(e.store.reserve('unlimited',7,'model',unlimited,20)).resolves.toBeTypeOf('string');
   });
   it('不同工作区看不到流程、账号、素材或调用账本',async()=>{
     const e=await engine(),w=randomUUID(),other=createFlowStore(repo,w);expect(await other.list()).toHaveLength(0);expect(await other.assets()).toHaveLength(0);expect(await other.spend()).toHaveLength(0);

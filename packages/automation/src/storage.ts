@@ -72,7 +72,7 @@ export function createFlowStore(repo:Repository,workspace:string){
   async function asset(value:Asset){await repo.scoped(workspace,async tx=>{await tx.execute(sql`INSERT INTO media_assets(id,workspace_id,product_id,document) VALUES(${value.id},${workspace},${value.productId},${JSON.stringify(value)}::jsonb)`);});}
   async function reserve(jobId:string,cents:number,service:string,config:SecretSettings,jobBudget:number){
     return repo.scoped(workspace,async tx=>{await tx.execute(sql`SELECT pg_advisory_xact_lock(450202)`);const daily=(await tx.execute(sql`SELECT COALESCE(SUM(reserved_cents),0) AS total FROM automation_spend WHERE created_at>=${now().slice(0,10)}`)).rows[0];const perJob=(await tx.execute(sql`SELECT COALESCE(SUM(reserved_cents),0) AS total FROM automation_spend WHERE job_id=${jobId}`)).rows[0];
-      if(Number(daily.total)+cents>config.dailyLimitCents||Number(perJob.total)+cents>jobBudget)throw new FlowError('BUDGET_EXCEEDED','调用预留额度不足，请管理员检查额度；已完成步骤保留');
+      if((config.dailyLimitCents>0&&Number(daily.total)+cents>config.dailyLimitCents)||Number(perJob.total)+cents>jobBudget)throw new FlowError('BUDGET_EXCEEDED','任务预算不足；已完成步骤保留');
       const id=randomUUID();await tx.execute(sql`INSERT INTO automation_spend(id,workspace_id,job_id,service,reserved_cents,status,created_at) VALUES(${id},${workspace},${jobId},${service},${cents},'reserved',${now()})`);return id;
     });
   }

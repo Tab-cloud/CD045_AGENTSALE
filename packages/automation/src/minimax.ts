@@ -9,7 +9,7 @@ import { FlowError,type SecretSettings,type Job,type Asset } from './types';
 type Transport=typeof requestBytes;
 const identifier=z.string().regex(/^\d{1,64}$/);
 export function assertMinimax(s:SecretSettings,service:'speech'|'video'){
-  if(!s.minimaxKey||s.minimax[service==='speech'?'speechLimitCents':'videoLimitCents']<1||s.dailyLimitCents<1)throw new FlowError('MINIMAX_UNCONFIGURED','请管理员配置 MiniMax 多媒体密钥及对应调用额度');
+  if(!s.minimaxKey||s.minimax[service==='speech'?'speechLimitCents':'videoLimitCents']<1)throw new FlowError('MINIMAX_UNCONFIGURED','请管理员配置 MiniMax 多媒体密钥及对应调用额度');
 }
 // Transport injection is for protocol tests only. App configuration cannot override network checks.
 export function createMinimax(transport:Transport=requestBytes){
