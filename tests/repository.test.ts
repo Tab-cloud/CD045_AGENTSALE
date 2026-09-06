@@ -75,6 +75,14 @@ describe('数据库、工作区隔离和任务一致性',()=>{
     const w=key();const {id}=await repo.execute(w,create(),key());await repo.execute(w,{type:'evidence.add',productId:id,expectedVersion:1,title:'包装资料',url:'https://example.com/specs',note:'仅测试确认',confirmed:true},key());
     const s=await repo.snapshot(w);expect(s.products[0].version).toBe(2);expect(s.evidence.filter(e=>e.confirmed)).toHaveLength(1);
   });
+  it('保存平台快照并形成工作区隔离的市场决策',async()=>{
+    const w=key(),other=key(),{id}=await repo.execute(w,create('MARKET-1'),key());
+    const signal={platform:'tiktok_shop' as const,country:'美国',observedAt:new Date().toISOString().slice(0,10),sourceType:'authorized_export' as const,sourceRef:'授权数据导出',unitsSold7d:120,views7d:250000,reviewCount:800,ratingHundredths:460,engagementRateBps:320,competitorCount:12,medianPriceMinor:3190,deliveryDays:9,refundRateBps:400,notes:'测试'};
+    await repo.execute(w,{type:'market.snapshot.add',productId:id,expectedProductVersion:1,signal},key());
+    const snapshot=await repo.snapshot(w);expect(snapshot.marketSignals).toHaveLength(1);expect(snapshot.decisions).toHaveLength(1);expect(snapshot.decisions[0]).toMatchObject({productId:id,platform:'tiktok_shop',country:'美国'});
+    expect((await repo.snapshot(other)).marketSignals).toHaveLength(0);
+    await expect(repo.execute(other,{type:'market.snapshot.add',productId:id,expectedProductVersion:1,signal},key())).rejects.toMatchObject({code:'NOT_FOUND'});
+  });
 });
 
 it('关闭并重新打开数据库后保留排队任务，并可继续完成',async()=>{

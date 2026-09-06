@@ -15,6 +15,7 @@ import { isPublicAddress,validUrl,robotsAllows,extractSource,requestBytes } from
 import { validateResearch,modelJson,marketing } from '../packages/automation/src/providers';
 import { createFlowStore } from '../packages/automation/src/storage';
 import { safeSettings } from '../packages/automation/src/vault';
+import { inferAgentIntent,parseAgentSlash } from '../packages/automation/src/agent';
 import { mediaHealth,command } from '../packages/automation/src/media';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -37,6 +38,11 @@ async function engine(workspace=randomUUID()){
   await automation.vault.save({...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100});await automation.verify();return automation;
 }
 async function product(workspace:string){return repo.execute(workspace,{type:'product.create',name:'Fixture stand',sku:'TEST-'+randomUUID().slice(0,8),supplier:'Fixture Manufacturing',region:'中国大陆',market:'待确定',description:'Synthetic fixture input, no actual supplier.',sourceUrl:source.url,costs:defaultCosts},randomUUID());}
+
+describe('Agent 对话与命令',()=>{
+  it('解析可审计的斜杠命令并拒绝未知命令',()=>{expect(parseAgentSlash('/goal 寻找轻小家居产品')).toMatchObject({action:'set_goal',value:'寻找轻小家居产品'});expect(parseAgentSlash('/budget 2.50')).toMatchObject({action:'set_budget',value:'2.50'});expect(()=>parseAgentSlash('/unknown')).toThrow();});
+  it('常见自然语言无需模型即可映射为安全动作',()=>{expect(inferAgentIntent('现在执行一轮')).toMatchObject({action:'run'});expect(inferAgentIntent('帮我寻找支持单件代发的供应商')).toMatchObject({action:'discover'});expect(inferAgentIntent('展示一下当前状态')).toMatchObject({action:'status'});});
+});
 
 describe('管理员与运营权责',()=>{
   it('首次建立管理员，登录产生真实会话；运营不能进入管理员权限',async()=>{

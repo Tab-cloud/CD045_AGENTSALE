@@ -33,7 +33,7 @@ export async function getRepository() {
         runtime.agentsaleTimer = setInterval(async () => {
           if (runtime.agentsaleBusy) return;
           runtime.agentsaleBusy = true;
-          try { await repository.processOne(LOCAL_WORKSPACE); await runtime.agentsaleAutomation?.tick(); }
+          try { await repository.processOne(LOCAL_WORKSPACE); await runtime.agentsaleAutomation?.tick(); await runtime.agentsaleAutomation?.agentTick(); }
           catch (error) { console.error('Local task processing failed:', error instanceof Error ? error.message : 'unknown'); }
           finally { runtime.agentsaleBusy = false; }
         }, 1500);

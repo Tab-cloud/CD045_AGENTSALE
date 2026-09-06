@@ -2,8 +2,8 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { randomUUID, createHash } from 'node:crypto';
-import { commandSchema, defaultCosts, type Command, type CommandResult, type Snapshot } from '@agentsale/contracts';
-import { assertDemoAction, assertVersion, assessCosts, DomainError, formatMinor } from '@agentsale/domain';
+import { commandSchema, defaultCosts, type Command, type CommandResult, type MarketSignal, type Snapshot } from '@agentsale/contracts';
+import { assertDemoAction, assertVersion, assessCosts, buildMarketDecisions, DomainError, formatMinor } from '@agentsale/domain';
 import * as schema from './schema';
 import { migration } from './migration';
 import { automationMigration } from './automation-migration';
@@ -50,14 +50,17 @@ export async function createRepository(dataDir?: string) {
     });
   }
   async function snapshot(workspaceId = LOCAL_WORKSPACE): Promise<Snapshot> {
-    return scoped(workspaceId, async tx => ({
-      workspace: { id: workspaceId, name: '出海经营工作区', mode: 'local_demo' },
-      products: await tx.select().from(schema.products).orderBy(schema.products.createdAt),
-      evidence: await tx.select().from(schema.evidence).orderBy(desc(schema.evidence.createdAt)),
-      drafts: await tx.select().from(schema.drafts).orderBy(desc(schema.drafts.createdAt)),
-      runs: await tx.select().from(schema.runs).orderBy(desc(schema.runs.createdAt)),
-      audit: await tx.select().from(schema.audit).orderBy(desc(schema.audit.createdAt)).limit(80)
-    }));
+    return scoped(workspaceId, async tx => {
+      const products=await tx.select().from(schema.products).orderBy(schema.products.createdAt);
+      const evidence=await tx.select().from(schema.evidence).orderBy(desc(schema.evidence.createdAt));
+      const rows=await tx.select().from(schema.marketSignals).orderBy(desc(schema.marketSignals.observedAt),desc(schema.marketSignals.createdAt));
+      const marketSignals:MarketSignal[]=rows.map(row=>{const {metrics,...identity}=row;return {...identity,...metrics};});
+      return {workspace:{id:workspaceId,name:'出海经营工作区',mode:'local_demo'},products,evidence,marketSignals,
+        decisions:buildMarketDecisions(products,evidence,marketSignals),
+        drafts:await tx.select().from(schema.drafts).orderBy(desc(schema.drafts.createdAt)),
+        runs:await tx.select().from(schema.runs).orderBy(desc(schema.runs.createdAt)),
+        audit:await tx.select().from(schema.audit).orderBy(desc(schema.audit.createdAt)).limit(80)};
+    });
   }
   async function execute(workspaceId: string, rawCommand: unknown, key: string): Promise<CommandResult> {
     assertDemoAction('local_demo', 'local');
@@ -82,6 +85,11 @@ export async function createRepository(dataDir?: string) {
         await tx.insert(schema.products).values({ ...fields, id, workspaceId, sample: false, version: 1, createdAt: now, updatedAt: now });
         await tx.insert(schema.evidence).values({ id: randomUUID(), workspaceId, productId: id, title: '录入来源', url: fields.sourceUrl, note: '由运营人员录入，尚未核实来源。', confirmed: false, createdAt: now });
         result = { id, message: '商品已保存，来源尚待核实' };
+      } else if(command.type==='market.snapshot.add'){
+        const product=await getProduct(tx,workspaceId,command.productId);assertVersion(product.version,command.expectedProductVersion);
+        const id=randomUUID(),{platform,country,observedAt,sourceType,sourceRef,...metrics}=command.signal;
+        await tx.insert(schema.marketSignals).values({id,workspaceId,productId:product.id,platform,country,observedAt,sourceType,sourceRef,metrics,createdAt:now});
+        result={id,message:`已保存 ${country} 市场快照，决策评分已更新`};
       } else if (command.type === 'product.costs' || command.type === 'evidence.add' || command.type === 'run.create') {
         const product = await getProduct(tx, workspaceId, command.type === 'product.costs' ? command.id : command.productId);
         assertVersion(product.version, command.expectedVersion);

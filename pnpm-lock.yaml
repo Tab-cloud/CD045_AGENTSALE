@@ -56,6 +56,9 @@ importers:
       cheerio:
         specifier: 1.2.0
         version: 1.2.0
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.8)
       sharp:
         specifier: 0.35.4
         version: 0.35.4(@types/node@24.13.3)

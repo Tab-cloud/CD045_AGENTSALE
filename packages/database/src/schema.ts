@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, integer, boolean, jsonb, unique } from 'drizzle-orm/pg-core';
-import type { Costs, CommandResult } from '@agentsale/contracts';
+import type { Costs, CommandResult, MarketSignalInput } from '@agentsale/contracts';
 const identity = () => ({ id: uuid('id').primaryKey(), workspaceId: text('workspace_id').notNull() });
 const timestamps = () => ({ createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull() });
 export const products = pgTable('products', {
@@ -10,3 +10,8 @@ export const drafts = pgTable('drafts', { ...identity(), productId: uuid('produc
 export const runs = pgTable('runs', { ...identity(), productId: uuid('product_id').notNull(), productVersion: integer('product_version').notNull(), kind: text('kind').$type<'assessment' | 'content'>().notNull(), state: text('state').$type<'queued' | 'paused' | 'succeeded' | 'failed'>().notNull(), version: integer('version').notNull(), summary: text('summary').notNull(), ...timestamps() });
 export const audit = pgTable('audit', { ...identity(), action: text('action').notNull(), objectId: text('object_id').notNull(), summary: text('summary').notNull(), createdAt: text('created_at').notNull() });
 export const idempotency = pgTable('idempotency', { workspaceId: text('workspace_id').notNull(), key: text('key').notNull(), hash: text('hash').notNull(), result: jsonb('result').$type<CommandResult>().notNull() }, table => [unique().on(table.workspaceId, table.key)]);
+export const marketSignals = pgTable('market_signals', {
+  ...identity(), productId:uuid('product_id').notNull(), platform:text('platform').$type<MarketSignalInput['platform']>().notNull(),
+  country:text('country').notNull(), observedAt:text('observed_at').notNull(), sourceType:text('source_type').$type<MarketSignalInput['sourceType']>().notNull(),
+  sourceRef:text('source_ref').notNull(), metrics:jsonb('metrics').$type<Omit<MarketSignalInput,'platform'|'country'|'observedAt'|'sourceType'|'sourceRef'>>().notNull(), createdAt:text('created_at').notNull()
+});
