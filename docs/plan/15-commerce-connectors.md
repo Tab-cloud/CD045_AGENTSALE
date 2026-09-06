@@ -16,7 +16,11 @@
 - `POST /product/202502/products/search`：按本地 SKU 查找渠道商品。
 - `GET /analytics/202605/shop_products/performance`：读取近七日商品销量、曝光与 CTR，写入决策层市场快照。
 - `POST /fulfillment/202309/orders/{order_id}/packages`：提交自发货包裹。
+- `GET /finance/202309/statements`：同步近 30 日结算单。
+- `POST /return_refund/202309/returns/search`：同步退货退款状态。
+- `POST /product/202309/products`：按渠道类目资料创建商品，并使用幂等键。
 - TikTok Shop Webhook：使用原始请求体验签，以 `tts_notification_id` 去重。
+- 卖家 OAuth：一次性 state、回调换取 Access/Refresh Token、卖家主体校验、自动读取 Shop Cipher；到期前自动刷新 Token。
 
 ### TikTok 内容发布
 
@@ -34,6 +38,9 @@
 - `bg.order.list.v2.get`：同步订单。
 - 订单按 `extCode` 与本地 SKU 聚合，写入决策层市场快照。
 - `bg.logistics.shipment.v2.confirm`：确认发货。
+- `bg.open.accesstoken.create`：US/EU 店铺回调换取 Token；Global 跨境店保留手工授权入口。
+- `bg.aftersales.parentaftersales.list.get`：同步售后单。
+- `bg.local.goods.add`、`bg.local.goods.stock.edit`：商品创建与库存写入接口。
 - Webhook 使用签名校验和事件 ID 去重。
 
 ### AgentSale Bridge 协议
@@ -66,11 +73,11 @@ Bridge 用于适配不同的中国供应链、ERP、WMS、3PL、DAM 和客服系
 
 ### P0：完整成交闭环
 
-1. **OAuth 与令牌续期**：TikTok Shop、TikTok Content、Temu 的授权回调、刷新、撤销和多店铺绑定。目前支持保存已取得的 Token。
-2. **商品创建与合规资料**：类目、属性、品牌、图片上传、重量尺寸、认证、仓库、运费模板、价格、库存、审核结果。不同品类字段不能从通用文案推断。
-3. **支付与财务对账**：消费者支付由平台完成；系统还需同步付款状态、退款、手续费、结算、提现、汇率、税费和供应商付款结果。
+1. **多店铺授权**：当前完成 TikTok Shop 单一活跃卖家 OAuth、自动刷新和 Temu US/EU 回调授权；仍需 TikTok Content OAuth、多店铺切换、主动撤销和 Global 跨境店回调授权。
+2. **商品合规资料编排**：商品创建和库存写入协议已实现；仍需按类目读取属性、品牌、图片上传、重量尺寸、认证、仓库、运费模板和审核结果。不同品类字段不能从通用文案推断。
+3. **完整财务对账**：已同步 TikTok Shop 结算单；仍需结算明细、付款、提现、退款、Temu 订单金额、汇率、税费和供应商付款结果。
 4. **完整履约状态机**：On Hold、待发货、拆单/合单、面单、揽收、轨迹异常、签收、丢件和超时。
-5. **退货退款**：资格判断、取消、退货地址、退货标签、部分退款、争议和结果回读。
+5. **退货退款**：已同步 TikTok Shop 与 Temu 售后单，并提供 TikTok 审批/拒绝接口；仍需资格判断、取消、退货地址、退货标签、部分退款、争议和财务结果回读。
 6. **供应商适配器**：1688 或具体 ERP 的商品、报价、库存、样品、采购、取消、发货与售后接口。Bridge 已定义，仍需选择首家真实供应商系统。
 7. **客户服务**：会话、消息、订单卡、物流卡、售后卡、敏感信息最小化和平台允许的自动回复规则。
 8. **授权权限发现**：保存每家店铺实际获批的 API scope、事件订阅、过期时间与区域。Temu 的 Token 信息会返回这些字段，不能仅按“配置过 Token”推断权限。

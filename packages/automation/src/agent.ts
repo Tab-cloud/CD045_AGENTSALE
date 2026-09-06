@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {FlowError} from './types';
-import type {CommerceOrder,ConnectorStatus} from './connectors';
+import type {CommerceOrder,CommerceRecord,ConnectorStatus} from './connectors';
 
 export const agentIntentSchema=z.object({
   action:z.enum(['help','status','set_goal','set_budget','set_interval','start','pause','run','sync','discover','content']),
@@ -12,7 +12,7 @@ export type CommerceAgentState={
   owner:{id:string;username:string}|null;lastAction:string;lastError:string;lastCycleAt?:string;nextCycleAt?:string;version:number;updatedAt:string;
 };
 export type CommerceAgentMessage={id:string;role:'user'|'assistant'|'system';kind:string;content:string;payload:unknown;createdAt:string};
-export type CommerceAgentSnapshot={state:CommerceAgentState;messages:CommerceAgentMessage[];capabilities:{model:boolean;search:boolean;marketConnector:boolean;publishingConnector:boolean;orderConnector:boolean;supplierConnector:boolean;assetConnector:boolean;logisticsConnector:boolean;customerConnector:boolean};connectors:ConnectorStatus[];orders:CommerceOrder[];jobs:{id:string;state:string;kind:string;createdAt:string}[]};
+export type CommerceAgentSnapshot={state:CommerceAgentState;messages:CommerceAgentMessage[];capabilities:{model:boolean;search:boolean;marketConnector:boolean;publishingConnector:boolean;orderConnector:boolean;supplierConnector:boolean;assetConnector:boolean;logisticsConnector:boolean;customerConnector:boolean};connectors:ConnectorStatus[];orders:CommerceOrder[];records:CommerceRecord[];jobs:{id:string;state:string;kind:string;createdAt:string}[]};
 
 export const agentHelp=`可用命令：
 /status 查看 Agent 状态与阻塞项
@@ -22,7 +22,7 @@ export const agentHelp=`可用命令：
 /start 启动持续运行
 /pause 暂停持续运行
 /run 立即执行一个决策周期
-/sync 立即同步已授权渠道的订单与状态
+/sync 立即同步已授权渠道的市场、订单、财务与售后状态
 /discover [方向] 启动一次供应商与市场发现
 /content <SKU> 根据已有商品资料自动生成内容
 /config 查看服务配置入口
