@@ -1,6 +1,6 @@
 # AgentSale · 中国工厂产品的海外分销运营平台
 
-商品内容本地版 v0.3 · 2026-09-06。已实现商品海报、详情文案、视频与 MiniMax 文本/配音/海螺接口；用户提供的 Token Plan 已完成真实内容包生成，取回 6 秒海螺原片并合成 16 秒带配音视频。交易履约闭环尚未完成接入。
+商品内容与门户隔离版 v0.4 · 2026-09-06。已实现商品海报、详情文案、视频与 MiniMax 文本/配音/海螺接口；用户提供的 Token Plan 已完成真实内容包生成，取回 6 秒海螺原片并合成 16 秒带配音视频。管理控制台和运营工作台已经拆分为独立前端与精确角色权限，交易履约闭环尚未完成接入。
 
 从中国大陆可供货、支持单件代发的供应商出发，由 AI 根据保存的发货证据选择商品与海外市场。延续已确认的苹果风：白色与冷灰、简洁列表、少量蓝色操作、浅色和深色外观。
 
@@ -13,9 +13,14 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开 [本地应用](http://127.0.0.1:3045)。首次使用创建管理员账号，无默认密码；首次数据库初始化包含明确标记的虚构示例商品。
+`pnpm dev` 或 `pnpm start` 会同时启动两个独立门户：
 
-1. 管理员进入「管理后台」，填写模型接口、模型名称与密钥，配置 Brave Search、单次和每日调用预留额度，保存并测试模型连接。
+- [运营工作台](http://127.0.0.1:3045)：仅运营账号，用于商品、供应商、内容、自动化和审阅；
+- [管理控制台](http://127.0.0.1:3047)：仅管理员账号，用于模型、密钥、额度、账号和审计。
+
+首次使用在管理控制台创建管理员账号，无默认密码；再由管理员建立运营账号。首次数据库初始化包含明确标记的虚构示例商品。
+
+1. 管理员进入独立管理控制台，填写模型接口、模型名称与密钥，配置 Brave Search、单次和每日调用预留额度，保存并测试模型连接。
 2. 管理员建立运营账号。运营可以管理商品、启动流程、上传素材、修改和审阅内容，不能读取密钥或修改服务与额度。
 3. 在「自动化」启动供应商发现。选品方向可留空，国家由 AI 根据供货证据判断；也可提供已有供货网址。
 4. 从商品启动「生成商品内容包（已有商品资料）」制作草稿；需要先复核供货时选择「供货复核 → 完整商品内容包」。上传授权商品图，按需选择配音或海螺视频，完成后预览、编辑和下载。
@@ -45,7 +50,7 @@ pnpm dev
 
 ## 数据与运行边界
 
-仅监听本机 `127.0.0.1:3045`，API 检查会话、角色、Host 和写入 Origin。当前是同一电脑、单工作区的应用层职责分离，不是公网多租户部署；拥有同一 Windows 账号和本机文件权限的人不在应用权限隔离范围内。
+运营后端监听本机 `127.0.0.1:3045`，独立管理前端监听 `127.0.0.1:3047`。管理前端只代理身份与管理接口，不代理商品、内容或自动化接口。API 检查会话、精确角色、Host 和写入 Origin：管理员不能调用运营业务接口，运营不能调用管理接口。当前仍是同一电脑、单工作区的应用层职责分离，不是公网多租户部署；拥有同一 Windows 账号和本机文件权限的人不在应用权限隔离范围内。
 
 PGlite 数据在 `%LOCALAPPDATA%/AgentSale/<项目名及路径摘要>/pglite`。本机实际目录：
 
@@ -57,12 +62,14 @@ C:\Users\Administrator\AppData\Local\AgentSale\CD045_AgentSale-cd0898b7\pglite
 
 每个数据目录仅运行一个服务进程。打开应用后后台工作器开始处理任务，关闭浏览器不停止已运行服务；关闭进程则停止。重启后不盲目重发可能计费的中断请求，需在流程中继续。调用额度是保守预留，并非服务商实际账单；未知结果继续占用预留。
 
-`AGENTSALE_DATA_DIR` 可指定独立 NTFS 数据目录，`AGENTSALE_PORT` 可改变本机端口；根启动脚本不自动读取 `.env.example`。隔离验收使用端口 3046 和 `qa-automation-20260906` 数据目录，测试账号不进入正常工作区。
+`AGENTSALE_DATA_DIR` 可指定独立 NTFS 数据目录，`AGENTSALE_PORT` 可改变运营端口；管理端口默认为运营端口加 2，也可由 `AGENTSALE_ADMIN_PORT` 指定。根启动脚本不自动读取 `.env.example`。隔离验收使用运营端口 3046、管理端口 3048 和 `qa-automation-20260906` 数据目录，测试账号不进入正常工作区。
 
 ## 文档与文件组织
 
 - [商品内容包与 MiniMax](docs/plan/10-content-kit-and-minimax.md)
 - [Git 管理约定](docs/plan/11-git-workflow.md)
+- [管理与运营门户隔离](docs/plan/12-portal-and-role-separation.md)
+- [v0.4 门户隔离验收报告](docs/reports/2026-09-06-portal-separation.md)
 - [v0.3 验收报告](docs/reports/2026-09-06-content-kit-minimax.md)
 - [当前自动化、角色与技术方案](docs/plan/09-automation-and-access.md)
 - [本次实现与验收证据](docs/reports/2026-09-06-automation-implementation.md)
@@ -71,4 +78,4 @@ C:\Users\Administrator\AppData\Local\AgentSale\CD045_AgentSale-cd0898b7\pglite
 - [交付路线](docs/plan/06-delivery-roadmap.md)、[决策记录](docs/plan/07-decisions-and-sources.md)
 - [历史首批范围](docs/plan/08-first-implementation.md)、[历史首批验收](docs/reports/2026-09-06-phase01-implementation.md)、[视觉样稿](docs/design/agent-sale-preview.html)
 
-`apps/console/` 为界面和 API；`packages/automation/` 为流程、模型/搜索、凭据、权限和媒体；`packages/database/` 为数据与隔离；`packages/contracts/`、`domain/`、`ui/` 为数据约定、计算和视觉；`tests/`、`scripts/`、`docs/` 各自保存验证、工具和文档。项目已由本机 Git 管理，尚未配置远程仓库或部署公网；MiniMax 实测使用用户明确提供的 Token Plan。
+`apps/console/` 为运营前端和业务后端，`apps/admin-console/` 为独立管理前端及受限代理；`packages/automation/` 为流程、模型/搜索、凭据、权限和媒体；`packages/database/` 为数据与隔离；`packages/contracts/`、`domain/`、`ui/` 为数据约定、计算和视觉；`tests/`、`scripts/`、`docs/` 各自保存验证、工具和文档。项目已由本机 Git 管理，尚未配置远程仓库或部署公网；MiniMax 实测使用用户明确提供的 Token Plan。

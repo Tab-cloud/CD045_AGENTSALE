@@ -24,6 +24,18 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3))
 
+  apps/admin-console:
+    dependencies:
+      next:
+        specifier: 16.3.4
+        version: 16.3.4(@types/node@24.13.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
+
   apps/console:
     dependencies:
       lucide-react:

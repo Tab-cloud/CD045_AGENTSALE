@@ -3,7 +3,8 @@
 import { readFile,writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 const base='http://127.0.0.1:3046',mode=process.argv[2]||'status',dir='docs/reports/artifacts/content-v0.3';
-const login=await fetch(base+'/api/v1/auth',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'login',username:'qa-admin',password:'TestOnly-Flow-20260906'})});if(!login.ok)throw new Error('QA login failed');const Cookie=login.headers.get('set-cookie').split(';')[0];
+async function loginAs(username,password){const r=await fetch(base+'/api/v1/auth',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'login',username,password})});if(!r.ok)throw new Error('QA role login failed');return r.headers.get('set-cookie').split(';')[0];}
+const Cookie=await loginAs(mode==='verify'?'qa-admin':'qa-operator',mode==='verify'?'TestOnly-Flow-20260906':'TestOnly-Operator-20260906');
 async function post(route,body){const r=await fetch(base+route,{method:'POST',headers:{Cookie,Origin:base,'Content-Type':'application/json','Idempotency-Key':randomUUID()},body:JSON.stringify(body)});return {status:r.status,...await r.json()};}
 if(mode==='verify'){const result=await post('/api/v1/admin',{action:'verify'}),record={...result,at:new Date().toISOString(),endpoint:'https://api.minimaxi.com/v1',model:'MiniMax-M2.7',live:true};await writeFile(dir+'/live-minimax-text.json',JSON.stringify(record,null,2));console.log(JSON.stringify(record));}
 else if(mode==='create'){

@@ -2,7 +2,7 @@
 import { readFile,writeFile,mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 const base='http://127.0.0.1:3046';
-const login=await fetch(base+'/api/v1/auth',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'login',username:'qa-admin',password:'TestOnly-Flow-20260906'})});if(!login.ok)throw new Error('QA login failed');const Cookie=login.headers.get('set-cookie').split(';')[0];
+const login=await fetch(base+'/api/v1/auth',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'login',username:'qa-operator',password:'TestOnly-Operator-20260906'})});if(!login.ok)throw new Error('QA operator login failed');const Cookie=login.headers.get('set-cookie').split(';')[0];
 async function post(route,body){const r=await fetch(base+route,{method:'POST',headers:{Cookie,Origin:base,'Content-Type':'application/json','Idempotency-Key':randomUUID()},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw new Error(JSON.stringify(v));return v;}
 const costs={currency:'USD',revenueMinor:2990,procurementCnyMinor:null,cnyPerUsdMillion:7200000,fxDate:'2026-09-06',shippingMinor:null,feeMinor:0,afterSaleMinor:0,mediaMinor:0,acquisitionMinor:0};
 const p=await post('/api/v1/commands',{type:'product.create',name:'QA Content Kit · Synthetic',sku:'KIT-'+randomUUID().slice(0,8),supplier:'Fixture Manufacturing',region:'Synthetic China source',market:'AI determines from fixture',description:'Synthetic fixture only; not an actual offer or supplier.',sourceUrl:'https://127.0.0.1/qa-source-blocked',costs});

@@ -4,7 +4,7 @@ import { access } from '../../../../lib/server-access';
 import { ownedFile } from '@agentsale/automation';
 import { DomainError } from '@agentsale/domain';
 export const runtime='nodejs';export const dynamic='force-dynamic';
-export async function GET(request:Request){try{await access(request);const query=new URL(request.url).searchParams,engine=await getAutomation();let file:string|undefined,mime='application/octet-stream',name='download';
+export async function GET(request:Request){try{await access(request,false,'operator');const query=new URL(request.url).searchParams,engine=await getAutomation();let file:string|undefined,mime='application/octet-stream',name='download';
   if(query.has('asset')){const asset=(await engine.store.assets()).find(a=>a.id===query.get('asset'));if(asset){file=asset.file;mime='image/png';name=asset.name;}}
   else {const job=await engine.store.get(query.get('job')||''),artifact=job.artifacts.find(a=>a.name===query.get('name'));if(artifact){file=artifact.file;mime=artifact.mime;name=artifact.name;}}
   if(!file)throw new DomainError('NOT_FOUND','文件不存在或不属于当前工作区',404);const bytes=await readFile(ownedFile(engine.root,file));

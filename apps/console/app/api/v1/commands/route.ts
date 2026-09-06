@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
-    await access(request, true);
+    await access(request, true, 'operator');
     const body = await request.text();
     if (Buffer.byteLength(body, 'utf8') > 65536) throw new DomainError('INPUT_TOO_LARGE', '输入内容过长', 413);
     let command: unknown;

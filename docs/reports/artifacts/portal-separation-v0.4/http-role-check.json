@@ -1,0 +1,13 @@
+{
+  "environment": "isolated QA portals",
+  "operatorUrl": "http://127.0.0.1:3046",
+  "administratorUrl": "http://127.0.0.1:3048",
+  "checks": {
+    "operatorBusiness": 200,
+    "operatorManagement": 403,
+    "adminManagementViaPortal": 200,
+    "adminBusinessDirect": 403,
+    "adminPortalBusinessProxy": 404
+  },
+  "verifiedAt": "2026-09-06T08:48:52.025Z"
+}

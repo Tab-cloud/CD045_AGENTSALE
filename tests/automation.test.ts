@@ -42,8 +42,8 @@ describe('管理员与运营权责',()=>{
   it('首次建立管理员，登录产生真实会话；运营不能进入管理员权限',async()=>{
     const auth=createAuth(repo,randomUUID());expect(await auth.setupNeeded()).toBe(true);
     await auth.create('admin-test','Strong-test-password','operator');expect(await auth.setupNeeded()).toBe(false);
-    const session=await auth.login('admin-test','Strong-test-password');expect(session.user.role).toBe('admin');expect(await auth.require(session.token,true)).toMatchObject({role:'admin'});
-    const op=await auth.create('operator-test','Strong-test-password','operator',session.user),login=await auth.login(op.username,'Strong-test-password');
+    const session=await auth.login('admin-test','Strong-test-password');expect(session.user.role).toBe('admin');expect(await auth.require(session.token,true)).toMatchObject({role:'admin'});await expect(auth.require(session.token,'operator')).rejects.toMatchObject({status:403});
+    const op=await auth.create('operator-test','Strong-test-password','operator',session.user),login=await auth.login(op.username,'Strong-test-password');expect(await auth.require(login.token,'operator')).toMatchObject({role:'operator'});
     await expect(auth.require(login.token,true)).rejects.toMatchObject({status:403});await expect(auth.create('second-test','Strong-test-password','admin',op)).rejects.toMatchObject({status:403});
     await auth.disable(op.id,session.user);await expect(auth.require(login.token)).rejects.toMatchObject({status:401});
     await auth.logout(session.token);await expect(auth.require(session.token)).rejects.toMatchObject({status:401});
