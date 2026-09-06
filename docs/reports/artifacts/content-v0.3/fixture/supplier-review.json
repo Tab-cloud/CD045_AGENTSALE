@@ -1,0 +1,42 @@
+{
+  "market": "Germany",
+  "inquiry": {
+    "body": "Synthetic QA draft, not sent.",
+    "subject": "测试询价草稿"
+  },
+  "missing": [
+    "Real supplier verification"
+  ],
+  "summary": "Synthetic supplier evidence for software QA.",
+  "reasoning": "Synthetic QA only; not a business recommendation.",
+  "candidates": [
+    {
+      "name": "Fixture Manufacturing",
+      "markets": [
+        {
+          "country": "Germany",
+          "rationale": "Synthetic source statement",
+          "shippingEvidence": {
+            "quote": "We ship directly to Germany.",
+            "sourceId": "ab00c702-3a4e-40b9-8e9c-aa815101c5e7"
+          }
+        }
+      ],
+      "product": "Fixture desktop stand",
+      "concerns": [
+        "QA fixture, not a real supplier"
+      ],
+      "sourceId": "ab00c702-3a4e-40b9-8e9c-aa815101c5e7",
+      "dropshipEvidence": {
+        "quote": "We offer single-unit dropshipping.",
+        "sourceId": "ab00c702-3a4e-40b9-8e9c-aa815101c5e7"
+      },
+      "mainlandEvidence": {
+        "quote": "based in Shenzhen, China",
+        "sourceId": "ab00c702-3a4e-40b9-8e9c-aa815101c5e7"
+      }
+    }
+  ],
+  "selectedIndex": 0,
+  "recommendation": "investigate"
+}

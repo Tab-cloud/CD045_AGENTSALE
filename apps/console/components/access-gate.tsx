@@ -1,0 +1,14 @@
+'use client';
+import { createContext,useContext,useEffect,useState,type ReactNode,type FormEvent } from 'react';
+import type { User } from '@agentsale/automation';
+const Session=createContext<User|null>(null);
+export const useSession=()=>useContext(Session);
+export function AccessGate({children}:{children:ReactNode}){
+  const [state,setState]=useState<{setupNeeded:boolean;user:User|null}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  async function load(){try{const response=await fetch('/api/v1/auth',{cache:'no-store'}),body=await response.json();if(!response.ok)throw new Error(body.message);setState(body);setError('');}catch(e){setError(e instanceof Error?e.message:'无法连接工作区');}}
+  useEffect(()=>{void load();const reset=()=>void load();window.addEventListener('agentsale-auth-changed',reset);return()=>window.removeEventListener('agentsale-auth-changed',reset);},[]);
+  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setError('');const data=new FormData(event.currentTarget);try{const response=await fetch('/api/v1/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:state?.setupNeeded?'setup':'login',username:data.get('username'),password:data.get('password')})});const body=await response.json();if(!response.ok)throw new Error(body.message);await load();}catch(e){setError(e instanceof Error?e.message:'登录失败');}finally{setBusy(false);}}
+  if(state?.user)return <Session.Provider value={state.user}>{children}</Session.Provider>;
+  return <main className="login-screen"><section className="login-form"><div className="brand">AgentSale</div><h1>{state?.setupNeeded?'建立管理员账号':'登录工作区'}</h1><p className="muted">{state?.setupNeeded?'管理员负责模型、搜索服务、额度及运营账号。创建后即可配置自动化。':'从中国工厂供货条件出发，开展海外分销。'}</p>{error&&<p className="form-error" role="alert">{error}</p>}{state?<form onSubmit={submit}><label className="field spaced">账号<input name="username" required autoComplete="username" minLength={3} maxLength={40} pattern="[A-Za-z0-9_-]+"/></label><label className="field spaced">密码<input name="password" type="password" required minLength={state.setupNeeded?10:1} maxLength={128} autoComplete={state.setupNeeded?'new-password':'current-password'}/></label><button className="btn primary spaced" disabled={busy}>{busy?'正在处理…':state.setupNeeded?'创建管理员并进入':'登录'}</button>{state.setupNeeded&&<p className="footnote">密码至少 10 位，无默认密码。模型密钥在登录后的管理后台配置。</p>}</form>:<button className="btn spaced" onClick={load}>重新连接</button>}<p className="footnote spaced">当前工作区仅在本机开放。</p></section></main>;
+}
+export function Logout(){return <button className="btn text" onClick={async()=>{await fetch('/api/v1/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'logout'})});window.dispatchEvent(new Event('agentsale-auth-changed'));}}>退出</button>;}

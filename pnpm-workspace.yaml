@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+nodeLinker: hoisted
+packageImportMethod: copy
+linkWorkspacePackages: false
+verifyDepsBeforeRun: error
+enableGlobalVirtualStore: false
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

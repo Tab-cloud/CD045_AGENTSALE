@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "verified": true,
+  "model": "MiniMax-M2.7",
+  "message": "模型调用及结构化输出已验证",
+  "at": "2026-09-06T08:10:20.329Z",
+  "endpoint": "https://api.minimaxi.com/v1",
+  "live": true
+}

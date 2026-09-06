@@ -1,0 +1,7 @@
+Fixture desktop stand
+
+A synthetic product used only to verify the content workflow.
+
+#TestFixture
+
+[Draft, not published]

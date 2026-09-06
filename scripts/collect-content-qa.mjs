@@ -1,0 +1,10 @@
+// Exports reviewed QA evidence from the isolated profile, never credentials.
+import { writeFile,mkdir,readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+const base='http://127.0.0.1:3046',live=process.argv[2]==='live',jobId=live?JSON.parse(await readFile('docs/reports/artifacts/content-v0.3/live-job.json','utf8')).jobId:'7dac17d8-432c-4d75-9957-82ea1615bfd5';
+const login=await fetch(base+'/api/v1/auth',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'login',username:'qa-admin',password:'TestOnly-Flow-20260906'})});if(!login.ok)throw new Error('QA login failed');const Cookie=login.headers.get('set-cookie').split(';')[0];
+const jobs=await (await fetch(base+'/api/v1/automation',{headers:{Cookie}})).json(),job=jobs.jobs.find(j=>j.id===jobId);if(!job)throw new Error('QA job not found');
+const dir=path.resolve('docs/reports/artifacts/content-v0.3',live?'live':'fixture');await mkdir(dir,{recursive:true});const files=[];
+for(const a of job.artifacts){if(!/^[a-z0-9.-]+$/i.test(a.name)||a.name.includes('..'))throw new Error('Unsafe artifact name');const response=await fetch(base+'/api/v1/files?'+new URLSearchParams({job:jobId,name:a.name}),{headers:{Cookie}});if(!response.ok)throw new Error('Artifact download failed');const bytes=Buffer.from(await response.arrayBuffer()),hash=createHash('sha256').update(bytes).digest('hex');if(hash!==a.hash)throw new Error('Digest mismatch');await writeFile(path.join(dir,a.name),bytes);files.push({name:a.name,bytes:bytes.length,sha256:hash});}
+const record={jobId,liveProvider:live,source:'Synthetic QA product and image, not a real supplier or product offer',state:job.state,error:job.error,remoteVideo:job.remoteVideo,steps:job.steps,files,at:new Date().toISOString()};await writeFile(path.join(dir,'verification.json'),JSON.stringify(record,null,2));if(job.copy)await writeFile(path.join(dir,'content.json'),JSON.stringify(job.copy,null,2));console.log(JSON.stringify({jobId,state:job.state,files:files.length,error:job.error}));

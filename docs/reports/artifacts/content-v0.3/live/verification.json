@@ -1,0 +1,166 @@
+{
+  "jobId": "723fa373-8040-4848-a78f-a3854dcbd178",
+  "liveProvider": true,
+  "source": "Synthetic QA product and image, not a real supplier or product offer",
+  "state": "waiting_review",
+  "error": "",
+  "remoteVideo": {
+    "fileId": "438779649241201",
+    "status": "Success",
+    "taskId": "438796671386104",
+    "endpoint": "https://api.minimaxi.com/v1",
+    "submittedAt": "2026-09-06T08:17:16.640Z"
+  },
+  "steps": [
+    {
+      "key": "sources",
+      "label": "采集供货证据",
+      "state": "done",
+      "summary": "来源正文与采集时间已保存",
+      "attempts": 1,
+      "startedAt": "2026-09-06T08:16:41.632Z",
+      "finishedAt": "2026-09-06T08:16:41.639Z"
+    },
+    {
+      "key": "copy",
+      "label": "生成商品内容",
+      "state": "done",
+      "summary": "完整商品文案已生成，等待人工核实",
+      "attempts": 1,
+      "startedAt": "2026-09-06T08:16:43.138Z",
+      "finishedAt": "2026-09-06T08:17:10.504Z"
+    },
+    {
+      "key": "poster",
+      "label": "生成多尺寸海报",
+      "state": "done",
+      "summary": "三种尺寸海报已保存",
+      "attempts": 1,
+      "startedAt": "2026-09-06T08:17:11.791Z",
+      "finishedAt": "2026-09-06T08:17:11.965Z"
+    },
+    {
+      "key": "speech",
+      "label": "MiniMax 合成配音",
+      "state": "done",
+      "summary": "MiniMax 配音已保存",
+      "attempts": 1,
+      "startedAt": "2026-09-06T08:17:13.305Z",
+      "finishedAt": "2026-09-06T08:17:15.051Z"
+    },
+    {
+      "key": "video_submit",
+      "label": "提交海螺视频",
+      "state": "done",
+      "summary": "远程视频任务号已保存",
+      "attempts": 1,
+      "startedAt": "2026-09-06T08:17:16.319Z",
+      "finishedAt": "2026-09-06T08:17:16.644Z"
+    },
+    {
+      "key": "video_wait",
+      "label": "等待并下载海螺视频",
+      "state": "done",
+      "summary": "海螺视频已下载并检查",
+      "attempts": 7,
+      "startedAt": "2026-09-06T08:23:57.810Z",
+      "finishedAt": "2026-09-06T08:23:59.159Z"
+    },
+    {
+      "key": "render",
+      "label": "制作最终视频",
+      "state": "done",
+      "summary": "MP4 已编码并通过媒体检查",
+      "attempts": 1,
+      "startedAt": "2026-09-06T08:23:59.310Z",
+      "finishedAt": "2026-09-06T08:24:00.245Z"
+    },
+    {
+      "key": "package",
+      "label": "整理交付素材",
+      "state": "done",
+      "summary": "交付文件与清单已保存",
+      "attempts": 1,
+      "startedAt": "2026-09-06T08:24:00.823Z",
+      "finishedAt": "2026-09-06T08:24:00.844Z"
+    }
+  ],
+  "files": [
+    {
+      "name": "poster-square.png",
+      "bytes": 73339,
+      "sha256": "37d01dcd2576e5459480b46f2d2348bc84f0ef7842ef05d9fef5493990b2b894"
+    },
+    {
+      "name": "poster-portrait.png",
+      "bytes": 90929,
+      "sha256": "e56323c293543d836006f92718149271a9bbdd0b34c82d1691b0c1a900ce4328"
+    },
+    {
+      "name": "poster-story.png",
+      "bytes": 115073,
+      "sha256": "50686d1518f8f661617375dfcc99433b9f03d37371971254eaec483b2be27153"
+    },
+    {
+      "name": "voiceover.mp3",
+      "bytes": 245940,
+      "sha256": "ca8fa5adfe916b41467e688af68e82951a4599a7ab818ef6cedd12db1ff2ec0c"
+    },
+    {
+      "name": "hailuo-source.mp4",
+      "bytes": 308357,
+      "sha256": "1eda42ffc449c3002ea7aa1c81cb331b3e099093a24de9a2a80b1bcfc905d045"
+    },
+    {
+      "name": "video.mp4",
+      "bytes": 538551,
+      "sha256": "64c37f09864aeab92d766df32a3a10e19a1a2e6be1b47a3aab15c3e0f849c1f8"
+    },
+    {
+      "name": "captions.srt",
+      "bytes": 590,
+      "sha256": "a68abb7919584f6b9ccb72629e78f7282bce236a2e76dfef5d6273012cfa3d12"
+    },
+    {
+      "name": "media-check.json",
+      "bytes": 403,
+      "sha256": "f7eea40096ba58cb6306d04fc81ce7346a9e4f3c33e9fce6f83537cd7270dbc9"
+    },
+    {
+      "name": "product-listing.json",
+      "bytes": 3416,
+      "sha256": "d3a2ed84b20279776c402e21e15e9223539e88729915133b44610d434de5df81"
+    },
+    {
+      "name": "product-description.html",
+      "bytes": 3047,
+      "sha256": "717b2c4d7d6bce26897029b86e204e02383e9142dde01787810493e47a265c41"
+    },
+    {
+      "name": "product-description.txt",
+      "bytes": 2553,
+      "sha256": "89381c501a32b4dee1c9975d5492f3afbc3441097e51ebbcec5b56994052e0b7"
+    },
+    {
+      "name": "social-post.txt",
+      "bytes": 376,
+      "sha256": "4e56a123e7c8306adb90b22c3483ffd77fdebc57bfab83cbe799406a9e8f52d9"
+    },
+    {
+      "name": "sources.json",
+      "bytes": 1490,
+      "sha256": "3455d6a565e54acf0dfcea9eaf6d777bffa428892ee195b870b1cfe2b84c4108"
+    },
+    {
+      "name": "README.txt",
+      "bytes": 363,
+      "sha256": "a8dced99fed71430008e655df9c01b6a461fd1b346729226bc473157be1c12b9"
+    },
+    {
+      "name": "manifest.json",
+      "bytes": 3717,
+      "sha256": "d5234c8b22782a4cd1cc9e9745a64889706d94dd346b05f5f89f5b4d665de2c4"
+    }
+  ],
+  "at": "2026-09-06T08:24:40.653Z"
+}

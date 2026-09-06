@@ -1,0 +1,11 @@
+// Uses an explicitly supplied process environment credential; never prints it.
+// Configures only the authenticated isolated QA profile. No automatic paid retries.
+import { writeFile,mkdir } from 'node:fs/promises';
+const key=process.env.AGENTSALE_TEST_MINIMAX_KEY;if(!key)throw new Error('Credential required through process environment');
+const base='http://127.0.0.1:3046',out='docs/reports/artifacts/content-v0.3';
+const login=await fetch(base+'/api/v1/auth',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'login',username:'qa-admin',password:'TestOnly-Flow-20260906'})});if(!login.ok)throw new Error('QA administrator login failed');const Cookie=login.headers.get('set-cookie').split(';')[0];
+const current=await (await fetch(base+'/api/v1/admin',{headers:{Cookie}})).json();const {hasApiKey,hasSearchKey,hasMinimaxKey,revision,verifiedAt,...settings}=current.settings;
+Object.assign(settings,{baseUrl:'https://api.minimaxi.com/v1',model:'MiniMax-M2.7',protocol:'minimax',format:'prompt_json',tokenParameter:'max_completion_tokens',maxTokens:8192,localModel:false,callLimitCents:5,dailyLimitCents:100,minimax:{...settings.minimax,baseUrl:'https://api.minimaxi.com/v1',speechModel:'speech-2.8-hd',voiceId:'English_Trustworthy_Man',speechLimitCents:5,videoLimitCents:50}});
+const save=await fetch(base+'/api/v1/admin',{method:'POST',headers:{Cookie,Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'save',settings,apiKey:key,minimaxKey:key})});if(!save.ok)throw new Error('Could not save protected provider configuration');
+const startedAt=new Date().toISOString(),r=await fetch(base+'/api/v1/admin',{method:'POST',headers:{Cookie,Origin:base,'Content-Type':'application/json'},body:JSON.stringify({action:'verify'})}),result=await r.json();
+const record={environment:'User-authorized live MiniMax Token Plan test, isolated QA profile',endpoint:settings.baseUrl,model:settings.model,startedAt,finishedAt:new Date().toISOString(),httpStatus:r.status,verified:result.verified===true,message:result.message||'',configuredReserveCents:5};await mkdir(out,{recursive:true});await writeFile(out+'/live-minimax-text.json',JSON.stringify(record,null,2));console.log(JSON.stringify(record));

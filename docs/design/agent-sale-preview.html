@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentSale · 视觉样稿 v0.2</title>
+  <link rel="stylesheet" href="agent-sale-preview.css">
+  <script src="agent-sale-preview.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" aria-label="主导航">
+    <div class="brand">AgentSale</div>
+    <div class="workspace">出海经营工作区</div>
+    <div class="nav-caption">工作区</div>
+    <nav class="nav" aria-label="样稿页面">
+      <button type="button" data-view="overview" aria-current="page"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="12" y="3" width="5" height="5" rx="1"/><rect x="3" y="12" width="5" height="5" rx="1"/><rect x="12" y="12" width="5" height="5" rx="1"/></svg>概览</button>
+      <button type="button" data-view="opportunity"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 2 7 4v8l-7 4-7-4V6zM3 6l7 4 7-4M10 10v8M6.5 4l7 4"/></svg>商品评估</button>
+      <button type="button" data-view="content"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="4" width="16" height="12" rx="2"/><path d="m8 7 5 3-5 3z"/></svg>内容</button>
+      <button type="button" data-view="store"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7h14l-1-4H4zM4 7v10h12V7M8 17v-6h4v6"/></svg>店铺</button>
+    </nav>
+    <div class="sidefoot">中国工厂 · 海外市场<br>视觉样稿 v0.2</div>
+  </aside>
+  <div>
+    <header class="topbar"><span class="breadcrumb" id="breadcrumb">概览</span><div class="topbar-right"><span class="preview-label">设计样稿 · 示例数据</span><button id="theme" type="button" class="theme-button" aria-pressed="false">深色外观</button></div></header>
+    <main class="main">
+      <section id="view-overview" aria-labelledby="title-overview">
+        <div class="pagehead"><div><h1 id="title-overview" tabindex="-1">概览</h1><p>商品、供应进展与待处理事项。</p></div><button class="btn primary" type="button" data-go="opportunity">查看商品评估</button></div>
+        <div class="stats">
+          <div class="stat"><span class="stat-label">候选商品</span><div class="value mono">12</div><p>本轮收集</p></div>
+          <div class="stat"><span class="stat-label">资料初步齐备</span><div class="value mono">3</div><p>等待进一步验证</p></div>
+          <div class="stat"><span class="stat-label">待处理</span><div class="value mono" id="review-total">2</div><p>供应资料与内容审阅</p></div>
+        </div>
+        <div class="columns">
+          <div class="panel"><div class="sectionrow"><h2>商品</h2><span class="small">最近 3 项</span></div>
+            <div class="table-wrap"><table><thead><tr><th>商品 / 供应商</th><th>进展</th><th>预期贡献 / 单</th></tr></thead><tbody>
+              <tr><td><div class="product-cell"><span class="thumb" aria-hidden="true"><span class="object-mini"></span></span><div><button class="table-link" type="button" data-go="opportunity">折叠桌面支架</button><div class="small muted">示例工厂 A</div></div></div></td><td><span class="status warning">待补资料</span></td><td><b class="mono" id="table-profit">$9.00</b><div class="small muted">估算</div></td></tr>
+              <tr><td><div class="product-cell"><span class="thumb" aria-hidden="true"><span class="object-bag"></span></span><div><b>旅行收纳包</b><div class="small muted">示例工厂 B</div></div></div></td><td><span class="status">等待报价</span></td><td>—</td></tr>
+              <tr><td><div class="product-cell"><span class="thumb" aria-hidden="true"><span class="object-clip"></span></span><div><b>桌面理线夹</b><div class="small muted">示例工厂 C</div></div></div></td><td><span class="status">整理资料</span></td><td>—</td></tr>
+            </tbody></table></div><p class="footnote">商品、工厂与金额为虚构示例；市场和供货尚未核实。</p>
+          </div>
+          <div class="panel"><div class="sectionrow"><h2>待处理事项</h2></div><div class="review-list">
+            <div class="task"><div class="task-heading"><h3>包装与国际运费</h3><span>待确认</span></div><p>取得包装尺寸和目的地报价后，更新成本估算。</p><button class="btn text" type="button" data-go="opportunity">查看资料 <span aria-hidden="true">›</span></button></div>
+            <div class="task"><div class="task-heading"><h3>英文视频脚本</h3><span id="content-task-status">待审阅</span></div><p>折叠桌面支架 · 20 秒 · 3 个分镜。</p><button class="btn text" type="button" data-go="content">打开草稿 <span aria-hidden="true">›</span></button></div>
+          </div></div>
+        </div>
+        <div class="notes"><h2>最近进展</h2><div class="activity"><div class="activity-item"><b>商品资料已整理</b><p>规格与来源保存在同一份商品档案。</p></div><div class="activity-item"><b>成本估算已完成</b><p>国际运费仍使用假设值。</p></div><div class="activity-item"><b>等待供货信息</b><p>补充资料后继续评估。</p></div></div></div>
+      </section>
+      <section id="view-opportunity" hidden aria-labelledby="title-opportunity">
+        <div class="pagehead"><div><h1 id="title-opportunity" tabindex="-1">商品评估</h1><p>查看成本、供货资料和待确认信息。</p></div><span class="status warning">资料待补全</span></div>
+        <div class="product-banner"><div class="product-art" role="img" aria-label="桌面支架造型示意，非实物照片"><div class="stand"><div class="stand-base"></div><div class="stand-arm"></div><div class="stand-top"></div></div></div><div><span class="small muted">DEMO-001</span><h2>折叠桌面支架</h2><p class="small muted">示例工厂 A · 工厂身份未核实</p><p class="small muted">市场待定 · 美元情景测算</p></div></div>
+        <div class="detail-grid">
+          <div class="panel"><div class="sectionrow"><h2>成本测算</h2><span class="small">USD / 单</span></div>
+            <div class="cost-line"><span>预期净销售收入</span><b class="mono">$29.90</b></div><div class="cost-line"><span>采购成本</span><b class="mono">− $6.20</b></div><div class="cost-line"><span>全程物流 · 假设</span><b class="mono">− $5.60</b></div><div class="cost-line"><span>支付与平台费用</span><b class="mono">− $1.50</b></div><div class="cost-line"><span>售后额外损耗准备</span><b class="mono">− $1.00</b></div><div class="cost-line"><span>内容与 AI 分摊</span><b class="mono">− $0.60</b></div>
+            <div class="slider-block"><label for="cac">获客成本 / 单 <output id="cac-value" for="cac" class="mono">$6.00</output></label><input id="cac" type="range" min="0" max="20" step="0.5" value="6"><div class="range-labels"><span>$0</span><span>调整成本，查看变化</span><span>$20</span></div></div>
+            <div class="result" id="profit-card"><div><span class="small muted">预期贡献利润</span><div><strong class="mono" id="profit">$9.00</strong><span class="small"> / 单</span></div></div><div class="result-rate"><b id="margin" class="mono">30.1%</b><div class="small muted">贡献利润率</div></div></div>
+            <p id="profit-status" class="footnote" aria-live="polite">情景估算，实际供货和运费尚待核实。</p><p class="footnote">收入假设已扣除代收税与退款，不含固定运营成本。其他成本固定时，获客成本盈亏平衡点为 $15.00。</p>
+          </div>
+          <div class="panel"><h2>待确认资料</h2><div class="evidence"><h3>工厂与产品规格 <span class="status">待核实</span></h3><p>工厂主体、样品结果及包装后的尺寸和重量。</p></div><div class="evidence"><h3>国际运输 <span class="status">待报价</span></h3><p>目的地、物流线路、税费承担和报价有效期。</p></div><div class="evidence"><h3>宣传素材 <span class="status">待授权</span></h3><p>图片和视频可使用的市场、平台及有效期。</p></div><p class="plain-note">当前建议：补充资料后再决定是否试销。</p><div class="next-step"><h3>内容草稿</h3><p>查看这款商品的英文视频分镜。</p><button class="btn text" type="button" data-go="content">打开内容 <span aria-hidden="true">›</span></button></div></div>
+        </div>
+      </section>
+      <section id="view-content" hidden aria-labelledby="title-content">
+        <div class="pagehead"><div><h1 id="title-content" tabindex="-1">内容</h1><p>折叠桌面支架 · 英文脚本 · 20 秒</p></div><span class="status warning" id="review-status">待审阅</span></div>
+        <div class="content-grid"><div><div class="preview-stage"><div class="video-frame" role="img" aria-label="英文视频静态分镜示意，未生成真实视频"><div><div class="frame-label"><span>分镜 1 / 3</span><span>9:16</span></div><h2>Desk Stand.</h2></div><div class="stand" aria-hidden="true"><div class="stand-base"></div><div class="stand-arm"></div><div class="stand-top"></div></div><div class="video-caption">A place for your everyday.<small>Product illustration · Concept only</small></div></div></div><p class="footnote">静态分镜示意，正式内容需使用获授权的实拍素材。</p></div>
+          <div><div class="sectionrow"><h2>脚本</h2><span class="small">English</span></div><div class="script-line"><span>00–05s · 开场</span><p>A place for your everyday.</p><em>桌面使用场景，需与实拍对应。</em></div><div class="script-line"><span>05–14s · 商品展示</span><p>A folding stand for your desk.</p><em>折叠结构与适用设备需核实。</em></div><div class="script-line"><span>14–20s · 了解商品</span><p>Explore the details.</p><em>引导方式按发布渠道确定。</em></div><p class="plain-note">素材和产品信息尚待核实。此处审阅仅演示状态变化，不会发布。</p><div class="review-actions"><button id="approve" type="button" class="btn primary">通过审阅</button><button id="reset-review" type="button" class="btn text" disabled>撤回审阅</button></div><div id="review-note" class="notice" hidden aria-live="polite">已完成演示审阅。尚未生成或发布真实视频。</div><button type="button" class="btn text" style="margin-top:20px" data-go="store">预览商品页 <span aria-hidden="true">›</span></button></div>
+        </div>
+      </section>
+      <section id="view-store" hidden aria-labelledby="title-store">
+        <div class="pagehead"><div><h1 id="title-store" tabindex="-1">店铺预览</h1><p>英文商品页 · 示例价格 · 未开放购买</p></div></div>
+        <div class="store" lang="en"><div class="storebar"><span class="store-logo">Everyday Form</span><span>Product preview</span></div><div class="storegrid"><div class="store-image" role="img" aria-label="Concept illustration of a silver desk stand, not a product photograph"><div class="stand"><div class="stand-base"></div><div class="stand-arm"></div><div class="stand-top"></div></div><span class="image-note">Concept illustration</span></div><div class="storecopy"><span class="product-category">Desk accessories</span><h2>Desk Stand.</h2><p class="description">A folding stand for your everyday setup.</p><div class="price mono">$29.90 <span>USD · sample price</span></div><button type="button" id="checkout" class="btn primary">Preview checkout</button><div class="store-details"><div><span>Compatibility</span><span>To be verified</span></div><div><span>Delivery</span><span>Destination required</span></div><div><span>Returns</span><span>Policy pending</span></div></div></div></div><div class="store-foot">Design preview only. No payment or personal information is collected.</div></div>
+      </section>
+      <footer class="footer-note"><span>AgentSale</span><span>示例数据与造型仅用于设计预览，无真实业务连接。</span></footer>
+    </main>
+  </div>
+</div>
+<dialog id="checkout-dialog" aria-labelledby="dialog-title"><h2 id="dialog-title">结账流程预览</h2><p>正式商品页将进入电商平台托管结账。当前样稿没有支付或订单接口，不会收集个人信息。</p><form method="dialog"><button class="btn primary" type="submit">返回商品页</button></form></dialog>
+</body>
+</html>

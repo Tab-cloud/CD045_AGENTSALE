@@ -1,0 +1,39 @@
+[
+  {
+    "id": "2c26d791b8e4db06",
+    "url": "https://127.0.0.1/qa-source-blocked",
+    "hash": "",
+    "text": "",
+    "error": "禁止访问本机、内网或云元数据地址",
+    "title": "127.0.0.1",
+    "status": "unavailable",
+    "fetchedAt": "2026-09-06T08:16:41.633Z"
+  },
+  {
+    "id": "ab00c702-3a4e-40b9-8e9c-aa815101c5e7",
+    "url": "https://example.com/qa-supplier",
+    "hash": "97559474ba06edf7099b04d9550cbf6afc829dd80903e1aec79cb2518001c10d",
+    "text": "Fixture Manufacturing is based in Shenzhen, China. We offer single-unit dropshipping. We ship directly to Germany. Product: aluminum desktop stand. This is a synthetic test source, not a real supplier.",
+    "title": "Fixture evidence",
+    "status": "imported",
+    "fetchedAt": "2026-09-06T08:16:41.637Z"
+  },
+  {
+    "id": "db77acee-ab2c-4bda-8210-042cc581aeac",
+    "url": "https://127.0.0.1/qa-source-blocked",
+    "hash": "d224e9296ea9356efe2b1423dddbef478794732d5f395445834dd2de3ea89fbd",
+    "text": "由运营人员录入，尚未核实来源。",
+    "title": "录入来源",
+    "status": "imported",
+    "fetchedAt": "2026-09-06T08:16:41.637Z"
+  },
+  {
+    "id": "product-description",
+    "url": "https://127.0.0.1/qa-source-blocked",
+    "hash": "f4f3c1bb8e2bcfcccff1fb5d0d0a56c4c05cbf8f49b2c074143cef25733cc228",
+    "text": "Synthetic fixture only; not an actual offer or supplier.",
+    "title": "商品录入资料",
+    "status": "imported",
+    "fetchedAt": "2026-09-06T08:16:41.637Z"
+  }
+]

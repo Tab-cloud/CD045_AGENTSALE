@@ -1,0 +1,12 @@
+import { pgTable, uuid, text, integer, boolean, jsonb, unique } from 'drizzle-orm/pg-core';
+import type { Costs, CommandResult } from '@agentsale/contracts';
+const identity = () => ({ id: uuid('id').primaryKey(), workspaceId: text('workspace_id').notNull() });
+const timestamps = () => ({ createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull() });
+export const products = pgTable('products', {
+  ...identity(), name: text('name').notNull(), sku: text('sku').notNull(), supplier: text('supplier').notNull(), region: text('region').notNull(), market: text('market').notNull(), description: text('description').notNull(), sourceUrl: text('source_url').notNull(), costs: jsonb('costs').$type<Costs>().notNull(), version: integer('version').notNull(), sample: boolean('sample').notNull(), ...timestamps()
+}, table => [unique('products_workspace_sku').on(table.workspaceId, table.sku), unique('products_workspace_id').on(table.workspaceId, table.id)]);
+export const evidence = pgTable('evidence', { ...identity(), productId: uuid('product_id').notNull(), title: text('title').notNull(), url: text('url').notNull(), note: text('note').notNull(), confirmed: boolean('confirmed').notNull(), createdAt: text('created_at').notNull() });
+export const drafts = pgTable('drafts', { ...identity(), productId: uuid('product_id').notNull(), productVersion: integer('product_version').notNull(), script: text('script').notNull(), state: text('state').$type<'review_required' | 'approved'>().notNull(), version: integer('version').notNull(), createdAt: text('created_at').notNull() });
+export const runs = pgTable('runs', { ...identity(), productId: uuid('product_id').notNull(), productVersion: integer('product_version').notNull(), kind: text('kind').$type<'assessment' | 'content'>().notNull(), state: text('state').$type<'queued' | 'paused' | 'succeeded' | 'failed'>().notNull(), version: integer('version').notNull(), summary: text('summary').notNull(), ...timestamps() });
+export const audit = pgTable('audit', { ...identity(), action: text('action').notNull(), objectId: text('object_id').notNull(), summary: text('summary').notNull(), createdAt: text('created_at').notNull() });
+export const idempotency = pgTable('idempotency', { workspaceId: text('workspace_id').notNull(), key: text('key').notNull(), hash: text('hash').notNull(), result: jsonb('result').$type<CommandResult>().notNull() }, table => [unique().on(table.workspaceId, table.key)]);

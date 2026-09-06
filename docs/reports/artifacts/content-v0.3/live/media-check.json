@@ -1,0 +1,13 @@
+{
+  "codec": "h264",
+  "width": 720,
+  "height": 1280,
+  "durationSeconds": 16,
+  "decoded": true,
+  "audio": "MiniMax speech",
+  "video": "MiniMax Hailuo + local formatting",
+  "subtitleTiming": "three equal sections; not speech alignment",
+  "tailHold": true,
+  "assetId": "1d55e902-96ee-4ce2-bb4c-9d806a487267",
+  "rights": "Synthetic fixture created for software testing, not a real product photo"
+}

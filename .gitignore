@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.local/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+test-results/
+*.local
+*.local.*
+*.tmp
+*.bak

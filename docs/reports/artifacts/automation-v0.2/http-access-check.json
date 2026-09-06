@@ -1,0 +1,10 @@
+{
+  "environment": "isolated QA profile on port 3046",
+  "unauthenticatedStatus": 401,
+  "operatorAdminRead": 403,
+  "operatorAdminWrite": 403,
+  "mediaUpload": 200,
+  "assetId": "ea4db718-5f0f-4ff0-84ba-54505eef4cae",
+  "productId": "682e7023-f1d3-4ccd-9abd-5bfc6ce656a7",
+  "createdAt": "2026-09-06T07:17:53.820Z"
+}

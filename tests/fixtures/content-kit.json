@@ -1,0 +1,27 @@
+{
+  "title": "Fixture desktop stand",
+  "caption": "A synthetic product used only to verify the content workflow.",
+  "hashtags": ["#TestFixture"],
+  "scenes": [
+    {"headline":"A considered workspace.","caption":"Synthetic product image. For software testing only.","sourceIds":["supplier-evidence"]},
+    {"headline":"See the details.","caption":"Review the supplier specifications before publishing.","sourceIds":["supplier-evidence"]},
+    {"headline":"Made for review.","caption":"This is a test fixture, not a real advertisement.","sourceIds":["supplier-evidence"]}
+  ],
+  "reviewNotes": ["Synthetic QA fixture. Not a verified product recommendation."],
+  "poster": {"headline":"A considered workspace.","subheading":"A product presentation built from your supplied image.","cta":"Explore the details"},
+  "narration":"Explore this fixture product. Review the details before publishing.",
+  "videoPrompt":"Slow camera movement. Preserve the supplied product shape and color. No added parts or text.",
+  "listing": {
+    "language":"en",
+    "title":"Fixture Aluminum Desktop Stand",
+    "summary":"A synthetic listing for testing the product content workflow.",
+    "description":"This synthetic desktop stand demonstrates a complete product description. The supplied source states aluminum construction. Dimensions, supported devices and packaging must be confirmed with the supplier before a real listing is published.",
+    "bullets":["Desktop stand described in the supplied source.","Aluminum material stated by the fixture supplier.","Dimensions and compatibility require confirmation."],
+    "specifications":[{"name":"Material","value":"Aluminum (fixture source)","sourceId":"supplier-evidence"}],
+    "seoTitle":"Fixture Desktop Stand | Software QA",
+    "seoDescription":"Synthetic product listing used to verify description, poster and video generation. Not a real offer.",
+    "keywords":["fixture desktop stand","software QA"],
+    "missing":["Dimensions","Compatibility","Packaging","Real supplier quotation"],
+    "sourceIds":["supplier-evidence"]
+  }
+}
