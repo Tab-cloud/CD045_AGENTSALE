@@ -146,6 +146,10 @@ describe('真实协议与持久流程',()=>{
     expect(await e.vault.get()).toMatchObject({model:'new-model',apiKey:'OLD-ENDPOINT-KEY',verifiedAt:null});
     await e.vault.save({...settings,baseUrl:'http://127.0.0.1:11434/v1'});expect(await e.vault.get()).toMatchObject({apiKey:'',searchKey:'SEARCH-KEY'});
     await e.vault.save(settings,undefined,'');expect(safeSettings(await e.vault.get()).hasSearchKey).toBe(false);
+    const mistakenMiniMax={...defaults,baseUrl:'https://api.openai.com/v1',model:'minimax-m3',protocol:'openai' as const,callLimitCents:25,dailyLimitCents:200};
+    await e.vault.save(mistakenMiniMax,'MINIMAX-ENDPOINT-KEY');
+    await e.vault.save({...mistakenMiniMax,baseUrl:'https://api.minimaxi.com/v1',model:'MiniMax-M3',protocol:'minimax',format:'prompt_json'},undefined,undefined,undefined,undefined,true);
+    expect(await e.vault.get()).toMatchObject({apiKey:'MINIMAX-ENDPOINT-KEY',baseUrl:'https://api.minimaxi.com/v1',protocol:'minimax'});
   });
   it('错误标识可跨服务路由模块读取，未知错误不伪装业务状态',()=>{
     const error=new FlowError('MODEL_UNCONFIGURED','请配置服务');expect(FlowError.is(error)).toBe(true);
