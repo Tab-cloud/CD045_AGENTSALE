@@ -1,10 +1,8 @@
-import { createAuth } from '@agentsale/automation';
-import { LOCAL_WORKSPACE } from '@agentsale/database';
+import type {User} from '@agentsale/automation';
 import { DomainError } from '@agentsale/domain';
-import { getRepository,requireLocal } from './local-runtime';
-export const token=(request:Request)=>request.headers.get('cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith('agentsale-session='))?.slice('agentsale-session='.length);
-export async function auth(){return createAuth(await getRepository(),LOCAL_WORKSPACE);}
-export async function access(request:Request,mutation=false,role?:true|'admin'|'operator'){requireLocal(request,mutation);return (await auth()).require(token(request),role);}
+import {requireLocal} from './local-runtime';
+export const localOperator:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};
+export async function access(request:Request,mutation=false,role?:true|'admin'|'operator'){requireLocal(request,mutation);if(role===true||role==='admin')throw new DomainError('FORBIDDEN','管理入口使用独立本机接口',403);return localOperator;}
 export async function jsonBody(request:Request,max=100000){
   if(Number(request.headers.get('content-length'))>max)throw new DomainError('INPUT_TOO_LARGE','提交内容过大',413);
   const reader=request.body?.getReader();if(!reader)throw new DomainError('INPUT_EMPTY','缺少提交内容');let size=0;const parts:Uint8Array[]=[];

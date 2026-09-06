@@ -1,6 +1,4 @@
-import { Console } from '../../components/console';
-import { AccessGate } from '../../components/access-gate';
-export default async function Page({ params }: { params: Promise<{ section?: string[] }> }) {
-  const { section = [] } = await params;
-  return <AccessGate><Console route={section} /></AccessGate>;
-}
+import {AgentConsole} from '../../components/agent-console';
+import {notFound} from 'next/navigation';
+
+export default async function Page({params}:{params:Promise<{section?:string[]}>}){const {section=[]}=await params;if(section[0]==='api')notFound();return <AgentConsole/>;}

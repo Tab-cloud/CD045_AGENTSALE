@@ -44,6 +44,7 @@ async function product(workspace:string){const created=await repo.execute(worksp
 describe('Agent 对话与命令',()=>{
   it('解析可审计的斜杠命令并拒绝未知命令',()=>{expect(parseAgentSlash('/goal 寻找轻小家居产品')).toMatchObject({action:'set_goal',value:'寻找轻小家居产品'});expect(parseAgentSlash('/budget 2.50')).toMatchObject({action:'set_budget',value:'2.50'});expect(()=>parseAgentSlash('/unknown')).toThrow();});
   it('常见自然语言无需模型即可映射为安全动作',()=>{expect(inferAgentIntent('现在执行一轮')).toMatchObject({action:'run'});expect(inferAgentIntent('帮我寻找支持单件代发的供应商')).toMatchObject({action:'discover'});expect(inferAgentIntent('展示一下当前状态')).toMatchObject({action:'status'});});
+  it('本机执行身份可启动 Agent，并在后续周期继续运行',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};const started=await e.agentChat('/start',local);expect(started.snapshot.state.owner).toMatchObject({id:local.id});const resumed=await e.runAgentCycle(undefined,true);expect(resumed.state.lastError).not.toContain('OWNER_UNAVAILABLE');});
 });
 describe('渠道连接器协议',()=>{
   it('按官方规则签名 TikTok、Temu 并验证 TikTok Webhook',()=>{

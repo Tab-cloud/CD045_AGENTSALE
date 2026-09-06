@@ -1,17 +1,9 @@
 'use client';
-import { createContext,useContext,useEffect,useState,type ReactNode,type FormEvent } from 'react';
-import type { User } from '@agentsale/automation';
-const Session=createContext<User|null>(null);
+import {createContext,useContext,type ReactNode} from 'react';
+import type {User} from '@agentsale/automation';
+
+const localUser:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};
+const Session=createContext<User>(localUser);
 export const useSession=()=>useContext(Session);
-const portalUrl=(offset:number)=>typeof window==='undefined'?'#':`${window.location.protocol}//${window.location.hostname}:${Number(window.location.port||'80')+offset}`;
-export function AccessGate({children}:{children:ReactNode}){
-  const [state,setState]=useState<{setupNeeded:boolean;user:User|null}|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
-  async function load(){try{const response=await fetch('/api/v1/auth',{cache:'no-store'}),body=await response.json();if(!response.ok)throw new Error(body.message);setState(body);setError('');}catch(e){setError(e instanceof Error?e.message:'无法连接工作区');}}
-  useEffect(()=>{void load();const reset=()=>void load();window.addEventListener('agentsale-auth-changed',reset);return()=>window.removeEventListener('agentsale-auth-changed',reset);},[]);
-  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setError('');const data=new FormData(event.currentTarget);try{const response=await fetch('/api/v1/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'login',username:data.get('username'),password:data.get('password')})});const body=await response.json();if(!response.ok)throw new Error(body.message);await load();}catch(e){setError(e instanceof Error?e.message:'登录失败');}finally{setBusy(false);}}
-  if(state?.user?.role==='operator')return <Session.Provider value={state.user}>{children}</Session.Provider>;
-  if(state?.user?.role==='admin')return <main className="login-screen"><section className="login-form"><div className="brand">AgentSale</div><h1>请进入管理控制台</h1><p className="muted">当前账号是管理员。管理员只负责服务、额度、账号和审计，不能进入运营工作台。</p><a className="btn primary spaced" href={portalUrl(2)}>打开管理控制台</a><Logout/></section></main>;
-  if(state?.setupNeeded)return <main className="login-screen"><section className="login-form"><div className="brand">AgentSale</div><h1>等待管理员初始化</h1><p className="muted">请先在独立管理控制台建立管理员账号，再由管理员创建运营账号。</p><a className="btn primary spaced" href={portalUrl(2)}>打开管理控制台</a>{error&&<p className="form-error" role="alert">{error}</p>}</section></main>;
-  return <main className="login-screen"><section className="login-form"><div className="brand">AgentSale</div><h1>运营工作台</h1><p className="muted">使用运营账号管理商品、供应商、内容和自动化流程。</p>{error&&<p className="form-error" role="alert">{error}</p>}{state?<form onSubmit={submit}><label className="field spaced">运营账号<input name="username" required autoComplete="username" minLength={3} maxLength={40} pattern="[A-Za-z0-9_-]+"/></label><label className="field spaced">密码<input name="password" type="password" required maxLength={128} autoComplete="current-password"/></label><button className="btn primary spaced" disabled={busy}>{busy?'正在登录…':'进入运营工作台'}</button></form>:<button className="btn spaced" onClick={load}>重新连接</button>}<p className="footnote spaced">管理员账号请使用独立管理控制台。</p></section></main>;
-}
-export function Logout(){return <button className="btn text" onClick={async()=>{await fetch('/api/v1/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'logout'})});window.dispatchEvent(new Event('agentsale-auth-changed'));}}>退出</button>;}
+export function AccessGate({children}:{children:ReactNode}){return <Session.Provider value={localUser}>{children}</Session.Provider>;}
+export function Logout(){return null;}
