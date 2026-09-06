@@ -12,7 +12,7 @@ import { createAuth } from '../packages/automation/src/auth';
 import { createAutomation } from '../packages/automation/src/engine';
 import { defaults,researchSchema,type Source,type Research,type Copy,type User,FlowError } from '../packages/automation/src/types';
 import { isPublicAddress,validUrl,robotsAllows,extractSource,requestBytes } from '../packages/automation/src/network';
-import { validateResearch,modelJson,marketing } from '../packages/automation/src/providers';
+import { validateResearch,modelJson,marketing,parseBingRss,parseDuckDuckGoHtml } from '../packages/automation/src/providers';
 import { createFlowStore } from '../packages/automation/src/storage';
 import { safeSettings } from '../packages/automation/src/vault';
 import { agentIntentSchema,inferAgentIntent,parseAgentSlash } from '../packages/automation/src/agent';
@@ -38,7 +38,7 @@ beforeAll(async()=>{
 });
 afterAll(async()=>{await repo.close();await new Promise<void>(resolve=>server.close(()=>resolve()));if(path.basename(root).startsWith('agentsale-automation-')&&path.dirname(root)===os.tmpdir())await rm(root,{recursive:true,force:true});});
 async function engine(workspace=randomUUID()){
-  const automation=createAutomation(repo,workspace,path.join(root,workspace),{fetchSource:async()=>source});
+  const automation=createAutomation(repo,workspace,path.join(root,workspace),{fetchSource:async()=>source,search:async()=>[]});
   await automation.vault.save({...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100});await automation.verify();return automation;
 }
 async function product(workspace:string){const created=await repo.execute(workspace,{type:'product.create',name:'Fixture stand',sku:'TEST-'+randomUUID().slice(0,8),supplier:'Fixture Manufacturing',region:'中国大陆',market:'待确定',description:'Synthetic fixture input, no actual supplier.',sourceUrl:source.url,costs:defaultCosts},randomUUID());return (await repo.snapshot(workspace)).products.find(item=>item.id===created.id)!;}
@@ -46,7 +46,8 @@ async function product(workspace:string){const created=await repo.execute(worksp
 describe('Agent 对话与命令',()=>{
   it('解析可审计的斜杠命令并拒绝未知命令',()=>{expect(parseAgentSlash('/goal 寻找轻小家居产品')).toMatchObject({action:'set_goal',value:'寻找轻小家居产品'});expect(parseAgentSlash('/budget 2.50')).toMatchObject({action:'set_budget',value:'2.50'});expect(()=>parseAgentSlash('/unknown')).toThrow();});
   it('模型意图协议不允许把普通对话降级为 help',()=>{expect(agentIntentSchema.safeParse({action:'help',value:'',explanation:''}).success).toBe(false);expect(parseAgentSlash('/help')).toMatchObject({action:'help'});});
-  it('常见自然语言无需模型即可映射为安全动作',()=>{expect(inferAgentIntent('现在执行一轮')).toMatchObject({action:'run'});expect(inferAgentIntent('帮我寻找支持单件代发的供应商')).toMatchObject({action:'discover'});expect(inferAgentIntent('展示一下当前状态')).toMatchObject({action:'status'});});
+  it('行动型自然语言无需模型即可映射为执行动作',()=>{expect(inferAgentIntent('现在执行一轮')).toMatchObject({action:'run'});expect(inferAgentIntent('请执行')).toMatchObject({action:'run'});expect(inferAgentIntent('请帮我找一下热销的杯子')).toMatchObject({action:'discover'});expect(inferAgentIntent('请根据销量去找')).toMatchObject({action:'discover'});expect(inferAgentIntent('展示一下当前状态')).toMatchObject({action:'status'});});
+  it('请执行会按当前目标创建任务，并即时同步真实阻塞而不退回聊天追问',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};await e.agentChat('/goal 美国市场热销杯具',local);const result=await e.agentChat('请执行',local),conversationId=result.snapshot.conversation.id;expect(result.intent).toMatchObject({action:'run'});expect(result.snapshot.state.status).toBe('active');expect(result.snapshot.jobs).toMatchObject([{kind:'discovery',state:'queued'}]);expect(result.reply).toContain('研究子 Agent 已启动');await e.tick();await e.tick();await e.agentTick();const blocked=await e.agentSnapshot(conversationId);expect(blocked.state.status).toBe('blocked');expect(blocked.state.lastError).toContain('SOURCE_UNAVAILABLE');expect((await e.store.get(blocked.jobs[0].id)).steps[0].summary).toContain('尚未取得可采集来源');});
   it('本机执行身份可启动 Agent，并在后续周期继续运行',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};const started=await e.agentChat('/start',local);expect(started.snapshot.state.owner).toMatchObject({id:local.id});const resumed=await e.runAgentCycle(started.snapshot.conversation.id,undefined,true);expect(resumed.state.lastError).not.toContain('OWNER_UNAVAILABLE');});
   it('新建对话隔离消息、目标、模型上下文和任务视图',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};const first=await e.agentChat('/goal 德国市场轻小商品',local),firstId=first.snapshot.conversation.id;await e.agentChat('第一段对话唯一标记 ALPHA',local,firstId);const second=await e.createConversation();expect(second.conversation.id).not.toBe(firstId);expect(second.messages).toHaveLength(0);expect(second.jobs).toHaveLength(0);await e.agentChat('/goal 美国市场家居商品',local,second.conversation.id);const start=received.length;await e.agentChat('第二段对话唯一标记 BETA',local,second.conversation.id);const secondPrompt=received.slice(start).find(input=>input.response_format?.json_schema?.name==='commerce_agent_intent').messages.at(-1).content;expect(secondPrompt).toContain('BETA');expect(secondPrompt).not.toContain('ALPHA');const restored=await e.agentSnapshot(firstId);expect(restored.state.objective).toBe('德国市场轻小商品');expect(restored.messages.map(message=>message.content).join('\n')).not.toContain('美国市场家居商品');const resume=received.length;await e.agentChat('继续刚才的话题',local,firstId);const firstPrompt=received.slice(resume).find(input=>input.response_format?.json_schema?.name==='commerce_agent_intent').messages.at(-1).content;expect(firstPrompt).toContain('ALPHA');expect(firstPrompt).not.toContain('BETA');});
   it('普通自然语言由模型生成对话回复，不退化为命令列表',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};const result=await e.agentChat('你好，先介绍一下你能怎样帮我',local);expect(result.reply).toContain('商品、市场和自动化任务');expect(result.reply).not.toContain('/status');});
@@ -66,6 +67,10 @@ describe('Agent 对话与命令',()=>{
     const call=received.slice(start).find(input=>input.response_format?.json_schema?.name==='commerce_agent_intent');
     expect(call.messages.at(-1).content).toContain('这是最新一轮提问');
   });
+});
+describe('公开网页搜索降级',()=>{
+  it('没有搜索密钥时可解析内置 RSS 搜索结果并去重',()=>{const xml='<?xml version="1.0"?><rss><channel><item><title>Cup supplier</title><link>https://supplier.example/cups</link><description><![CDATA[China cup <b>supplier</b>]]></description></item><item><title>Duplicate</title><link>https://supplier.example/cups</link><description>same</description></item></channel></rss>';expect(parseBingRss(xml)).toEqual([{url:'https://supplier.example/cups',title:'Cup supplier',description:'China cup supplier',source:'bing_rss'}]);});
+  it('优先解析 DuckDuckGo HTML 并还原结果跳转地址',()=>{const html='<div class="result"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fsupplier.example%2Fcups">Cup supplier</a><div class="result__snippet">China cup supplier</div></div>';expect(parseDuckDuckGoHtml(html)).toEqual([{url:'https://supplier.example/cups',title:'Cup supplier',description:'China cup supplier',source:'duckduckgo_html'}]);});
 });
 describe('渠道连接器协议',()=>{
   it('按官方规则签名 TikTok、Temu 并验证 TikTok Webhook',()=>{

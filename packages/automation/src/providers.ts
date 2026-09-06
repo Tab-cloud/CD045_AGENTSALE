@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { load } from 'cheerio';
 import { requestBytes,validUrl } from './network';
 import { FlowError,researchSchema,contentSchema,type SecretSettings,type Source,type Research,type Copy,type Job,type WebSearchHit } from './types';
 
@@ -35,18 +36,36 @@ export async function modelJson<T>(config:SecretSettings,schema:z.ZodType<T>,nam
   const choice=result.choices?.[0];if(choice?.message?.refusal)throw new FlowError('MODEL_REFUSAL','模型拒绝了该请求，任务已保留');
   if(choice?.finish_reason==='length')throw new FlowError('MODEL_TRUNCATED','模型输出达到长度上限，请管理员调整上限后重试');
   let value:unknown;try{value=parseModelJson(choice?.message?.content);}catch{throw new FlowError('MODEL_JSON','模型未返回可用的结构化内容（内容长度 '+String(choice?.message?.content?.length||0)+'，结束标记 '+String(choice?.finish_reason||'unknown').slice(0,20)+'）');}
-  const parsed=schema.safeParse(value);if(!parsed.success)throw new FlowError('MODEL_SCHEMA','模型输出未通过业务结构校验，未生成假成功结果');
+  const parsed=schema.safeParse(value);if(!parsed.success){const issues=parsed.error.issues.slice(0,3).map(issue=>`${issue.path.join('.')||'root'} ${issue.message}`).join('；');throw new FlowError('MODEL_SCHEMA',`模型输出未通过业务结构校验，未生成假成功结果：${issues}`);}
   return {data:parsed.data,usage:result.usage||null,model:typeof result.model==='string'?result.model:config.model};
 }
 export async function verifyModel(config:SecretSettings){return modelJson(config,z.object({ready:z.literal(true)}).strict(),'connection_check','Return exactly {"ready":true}.',true);}
+const allowedHit=(url:URL,domains:string[])=>!domains.length||domains.some(domain=>url.hostname===domain||url.hostname.endsWith('.'+domain));
+export function parseBingRss(xml:string,allowedDomains:string[]=[]):WebSearchHit[]{
+  const $=load(xml,{xmlMode:true}),hits:WebSearchHit[]=[];
+  $('item').each((_,item)=>{try{const raw=$(item).find('link').first().text().trim(),url=validUrl(raw);if(!allowedHit(url,allowedDomains)||hits.some(hit=>hit.url===url.href))return;const title=$(item).find('title').first().text().replace(/\s+/g,' ').trim().slice(0,250)||url.hostname,description=load($(item).find('description').first().text()).text().replace(/\s+/g,' ').trim().slice(0,600);hits.push({url:url.href,title,description,source:'bing_rss'});}catch{}});
+  return hits.slice(0,6);
+}
+export function parseDuckDuckGoHtml(html:string,allowedDomains:string[]=[]):WebSearchHit[]{
+  const $=load(html),hits:WebSearchHit[]=[];
+  $('.result').each((_,item)=>{try{const anchor=$(item).find('.result__a').first(),raw=anchor.attr('href')||'',redirect=new URL(raw.startsWith('//')?'https:'+raw:raw,'https://duckduckgo.com'),target=redirect.hostname.endsWith('duckduckgo.com')&&redirect.searchParams.get('uddg')||redirect.href,url=validUrl(target);if(!allowedHit(url,allowedDomains)||hits.some(hit=>hit.url===url.href))return;const title=anchor.text().replace(/\s+/g,' ').trim().slice(0,250)||url.hostname,description=$(item).find('.result__snippet').first().text().replace(/\s+/g,' ').trim().slice(0,600);hits.push({url:url.href,title,description,source:'duckduckgo_html'});}catch{}});
+  return hits.slice(0,6);
+}
 export async function webSearch(query:string,config:SecretSettings):Promise<WebSearchHit[]>{
-  if(!config.searchKey)throw new FlowError('SEARCH_UNCONFIGURED','请管理员配置 Brave Search，或在本次流程提供可采集的供应商链接');
-  const response=await requestBytes('https://api.search.brave.com/res/v1/web/search?q='+encodeURIComponent(query)+'&count=6&safesearch=strict',{headers:{Accept:'application/json','X-Subscription-Token':config.searchKey}});
-  if(response.status!==200)throw new FlowError('SEARCH_HTTP','搜索服务返回 '+response.status+'，请检查搜索密钥与额度');
-  let data:any;try{data=JSON.parse(response.body.toString());}catch{throw new FlowError('SEARCH_RESPONSE','搜索服务响应无效');}
-  const hits:WebSearchHit[]=[];
-  for(const item of data.web?.results||[]){try{const u=validUrl(item.url);if((!config.allowedDomains.length||config.allowedDomains.some(d=>u.hostname===d||u.hostname.endsWith('.'+d)))&&!hits.some(hit=>hit.url===u.href))hits.push({url:u.href,title:String(item.title||u.hostname).slice(0,250),description:String(item.description||'').replace(/\s+/g,' ').trim().slice(0,600),source:'brave'});}catch{}}
-  if(!hits.length)throw new FlowError('SEARCH_EMPTY','搜索未找到允许范围内的供应商来源，请调整品类词或域名范围');return hits.slice(0,6);
+  let hits:WebSearchHit[]=[];
+  if(config.searchKey){
+    const response=await requestBytes('https://api.search.brave.com/res/v1/web/search?q='+encodeURIComponent(query)+'&count=6&safesearch=strict',{headers:{Accept:'application/json','X-Subscription-Token':config.searchKey}});
+    if(response.status!==200)throw new FlowError('SEARCH_HTTP','Brave 搜索返回 '+response.status+'，请检查搜索密钥与额度');
+    let data:any;try{data=JSON.parse(response.body.toString());}catch{throw new FlowError('SEARCH_RESPONSE','Brave 搜索响应无效');}
+    for(const item of data.web?.results||[]){try{const url=validUrl(item.url);if(allowedHit(url,config.allowedDomains)&&!hits.some(hit=>hit.url===url.href))hits.push({url:url.href,title:String(item.title||url.hostname).slice(0,250),description:String(item.description||'').replace(/\s+/g,' ').trim().slice(0,600),source:'brave'});}catch{}}
+  }else{
+    try{
+      const response=await requestBytes('https://html.duckduckgo.com/html/?q='+encodeURIComponent(query),{headers:{Accept:'text/html,application/xhtml+xml','User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128 Safari/537.36'},timeout:20000,maxBytes:768_000});
+      if(response.status===200)hits=parseDuckDuckGoHtml(response.body.toString(),config.allowedDomains);
+    }catch{}
+    if(!hits.length){const response=await requestBytes('https://www.bing.com/search?format=rss&q='+encodeURIComponent(query),{headers:{Accept:'application/rss+xml, application/xml;q=0.9, text/xml;q=0.8'},timeout:20000,maxBytes:512_000});if(response.status!==200)throw new FlowError('SEARCH_HTTP','内置公开网页搜索返回 '+response.status);hits=parseBingRss(response.body.toString(),config.allowedDomains);}
+  }
+  if(!hits.length)throw new FlowError('SEARCH_EMPTY','搜索未找到允许范围内的公开来源，请调整品类词或域名范围');return hits.slice(0,6);
 }
 export async function searchSuppliers(query:string,config:SecretSettings){return (await webSearch(query,config)).map(hit=>hit.url).slice(0,5);}
 const normalize=(s:string)=>s.replace(/\s+/g,' ').trim();

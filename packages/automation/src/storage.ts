@@ -60,7 +60,7 @@ export function createFlowStore(repo:Repository,workspace:string){
   });await audit('automation.revise',id,actor.username+' 修订文案，旧审阅和视频已失效');return job;}
   async function finish(id:string,lease:string,key:StepKey,patch:Partial<Job>,error?:string){return mutate(id,j=>{
     if(j.lease!==lease)throw new FlowError('LEASE_CHANGED','步骤执行权已变化');const step=j.steps.find(s=>s.key===key)!;
-    Object.assign(j,patch);j.lease=null;step.finishedAt=now();step.state=error?'blocked':'done';step.summary=error||({discover:'供货来源已找到',sources:'来源正文与采集时间已保存',cost:'成本计算完成，缺失项保留',research:'供应商、发货证据及市场判断已保存',copy:'完整商品文案已生成，等待人工核实',poster:'三种尺寸海报已保存',speech:'MiniMax 配音已保存',video_submit:'远程视频任务号已保存',video_wait:'海螺视频已下载并检查',render:'MP4 已编码并通过媒体检查',package:'交付文件与清单已保存'}[key]);
+    Object.assign(j,patch);j.lease=null;step.finishedAt=now();step.state=error?'blocked':'done';step.summary=error||(key==='discover'?(patch.sources?.length?'供货来源已找到':'调研计划已执行，尚未取得可采集来源'):({sources:'来源正文与采集时间已保存',cost:'成本计算完成，缺失项保留',research:'供应商、发货证据及市场判断已保存',copy:'完整商品文案已生成，等待人工核实',poster:'三种尺寸海报已保存',speech:'MiniMax 配音已保存',video_submit:'远程视频任务号已保存',video_wait:'海螺视频已下载并检查',render:'MP4 已编码并通过媒体检查',package:'交付文件与清单已保存'} as Partial<Record<StepKey,string>>)[key])||'步骤已完成';
     if(error)j.error=error;
     if(!['paused','cancelled'].includes(j.state))j.state=error?'blocked':j.steps.every(s=>s.state==='done')?'waiting_review':'queued';
   });}

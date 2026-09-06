@@ -90,6 +90,18 @@ export async function runWebResearch(input:{
       catch(error){record(iteration,action.tool,'failed',toolInput,action.reason,messageOf(error),startedAt);}
     }
 
+    // The planner chooses the direction; the executor guarantees forward
+    // progress. Some models keep asking for more searches after URLs exist.
+    // Fetch a small bounded sample so a valid search can never end with zero
+    // evidence solely because of a poor tool plan.
+    if(sources.length<2&&fetched.size<maxFetches){
+      for(const url of [...knownUrls].filter(candidate=>!fetched.has(candidate)).slice(0,2)){
+        const startedAt=new Date().toISOString();fetched.add(url);
+        try{const source=await registry.call('web.fetch',{url}) as Source;if(!sources.some(item=>item.hash===source.hash||item.url===source.url))sources.push(source);record(iteration,'web.fetch','succeeded',{url},'执行器自动读取搜索候选，防止计划停滞',`已保存来源“${source.title}”及内容哈希`,startedAt);executed++;}
+        catch(error){record(iteration,'web.fetch','failed',{url},'执行器自动读取搜索候选，防止计划停滞',messageOf(error),startedAt);}
+      }
+    }
+
     if(!executed&&plan.actions.length===0)break;
   }
 

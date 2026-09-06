@@ -40,11 +40,11 @@ export function parseAgentSlash(message:string):AgentIntent|null{
 export function inferAgentIntent(message:string):AgentIntent|null{
   const text=message.trim();
   if(/(暂停|停下|停止运行)/.test(text))return {action:'pause',value:'',explanation:'明确暂停请求'};
-  if(/(立即运行|执行一轮|现在执行)/.test(text))return {action:'run',value:'',explanation:'明确执行请求'};
+  if(/(立即运行|执行一轮|现在执行|请执行|开始执行|继续执行|按.*目标.*执行)/.test(text))return {action:'run',value:'',explanation:'依据当前目标立即执行'};
   if(/(同步|拉取).*(订单|渠道|店铺)/.test(text))return {action:'sync',value:'',explanation:'同步渠道数据'};
   if(/(开始|启动).*(自动|运行|agent)/i.test(text))return {action:'start',value:'',explanation:'明确启动请求'};
   if(/(状态|进度|在做什么|做了什么)/.test(text))return {action:'status',value:'',explanation:'状态查询'};
-  if(/(寻找|查找|调研|选品|供应商)/.test(text))return {action:'discover',value:text,explanation:'商品与供应商发现'};
+  if(/(寻找|查找|调研|选品|供应商|找一下|帮我找|去找|筛选|推荐).*(商品|产品|供应商|杯|热销|销量|趋势)?/.test(text)||/(销量|热销|趋势).*(找|选|筛|商品|产品)/.test(text))return {action:'discover',value:text,explanation:'商品、销量与供应商发现'};
   const goal=text.match(/(?:目标|任务)(?:是|为|：|:)?\s*(.+)/);if(goal?.[1])return {action:'set_goal',value:goal[1],explanation:'经营目标'};
   return null;
 }

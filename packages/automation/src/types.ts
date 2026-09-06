@@ -29,7 +29,7 @@ export type PublicSettings = Settings & { hasApiKey: boolean; hasSearchKey: bool
 export const defaults: Settings = { baseUrl:'https://api.openai.com/v1',model:'',localModel:false,format:'json_schema',protocol:'openai',minimax:minimaxSchema.parse({}),tokenParameter:'max_completion_tokens',maxTokens:4096,callLimitCents:0,dailyLimitCents:0,searchCallCents:1,allowedDomains:[],connectors:connectorSettingsSchema.parse({}) };
 export type User = { id:string; username:string; role:'admin'|'operator'; enabled:boolean };
 export type Source = { id:string; url:string; title:string; text:string; hash:string; fetchedAt:string; status:'fetched'|'imported'|'unavailable'; error?:string };
-export type WebSearchHit = { url:string; title:string; description:string; source:'brave' };
+export type WebSearchHit = { url:string; title:string; description:string; source:'brave'|'duckduckgo_html'|'bing_rss' };
 export type ResearchToolName = 'web.search'|'web.fetch';
 export type ResearchToolRun = {
   id:string; iteration:number; tool:ResearchToolName; status:'succeeded'|'failed'|'rejected';
