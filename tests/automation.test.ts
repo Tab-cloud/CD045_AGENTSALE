@@ -15,7 +15,7 @@ import { isPublicAddress,validUrl,robotsAllows,extractSource,requestBytes } from
 import { validateResearch,modelJson,marketing } from '../packages/automation/src/providers';
 import { createFlowStore } from '../packages/automation/src/storage';
 import { safeSettings } from '../packages/automation/src/vault';
-import { inferAgentIntent,parseAgentSlash } from '../packages/automation/src/agent';
+import { agentIntentSchema,inferAgentIntent,parseAgentSlash } from '../packages/automation/src/agent';
 import {createCommerceConnectors,signTemu,signTikTok,verifyTikTokWebhook} from '../packages/automation/src/connectors';
 import { mediaHealth,command } from '../packages/automation/src/media';
 import { sql } from 'drizzle-orm';
@@ -31,7 +31,7 @@ const received:any[]=[];
 const actor:User={id:randomUUID(),username:'test-admin',role:'admin',enabled:true};
 beforeAll(async()=>{
   repo=await createRepository();root=await mkdtemp(path.join(os.tmpdir(),'agentsale-automation-'));
-  server=createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{const input=JSON.parse(body);received.push(input);const name=input.response_format?.json_schema?.name;const content=name==='connection_check'?{ready:true}:name==='supplier_research'?report:copy;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture-http-model',choices:[{finish_reason:'stop',message:{content:JSON.stringify(content)}}],usage:{prompt_tokens:30,completion_tokens:100}}));});});
+  server=createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{const input=JSON.parse(body);received.push(input);const name=input.response_format?.json_schema?.name;const content=name==='connection_check'?{ready:true}:name==='supplier_research'?report:name==='commerce_agent_intent'?{action:'chat',value:'你好，我可以和你一起梳理商品、市场和自动化任务。',explanation:'普通问候'}:copy;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture-http-model',choices:[{finish_reason:'stop',message:{content:JSON.stringify(content)}}],usage:{prompt_tokens:30,completion_tokens:100}}));});});
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));baseUrl='http://127.0.0.1:'+(server.address() as {port:number}).port+'/v1';
 });
 afterAll(async()=>{await repo.close();await new Promise<void>(resolve=>server.close(()=>resolve()));if(path.basename(root).startsWith('agentsale-automation-')&&path.dirname(root)===os.tmpdir())await rm(root,{recursive:true,force:true});});
@@ -43,8 +43,10 @@ async function product(workspace:string){const created=await repo.execute(worksp
 
 describe('Agent 对话与命令',()=>{
   it('解析可审计的斜杠命令并拒绝未知命令',()=>{expect(parseAgentSlash('/goal 寻找轻小家居产品')).toMatchObject({action:'set_goal',value:'寻找轻小家居产品'});expect(parseAgentSlash('/budget 2.50')).toMatchObject({action:'set_budget',value:'2.50'});expect(()=>parseAgentSlash('/unknown')).toThrow();});
+  it('模型意图协议不允许把普通对话降级为 help',()=>{expect(agentIntentSchema.safeParse({action:'help',value:'',explanation:''}).success).toBe(false);expect(parseAgentSlash('/help')).toMatchObject({action:'help'});});
   it('常见自然语言无需模型即可映射为安全动作',()=>{expect(inferAgentIntent('现在执行一轮')).toMatchObject({action:'run'});expect(inferAgentIntent('帮我寻找支持单件代发的供应商')).toMatchObject({action:'discover'});expect(inferAgentIntent('展示一下当前状态')).toMatchObject({action:'status'});});
   it('本机执行身份可启动 Agent，并在后续周期继续运行',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};const started=await e.agentChat('/start',local);expect(started.snapshot.state.owner).toMatchObject({id:local.id});const resumed=await e.runAgentCycle(undefined,true);expect(resumed.state.lastError).not.toContain('OWNER_UNAVAILABLE');});
+  it('普通自然语言由模型生成对话回复，不退化为命令列表',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};const result=await e.agentChat('你好，先介绍一下你能怎样帮我',local);expect(result.reply).toContain('商品、市场和自动化任务');expect(result.reply).not.toContain('/status');});
 });
 describe('渠道连接器协议',()=>{
   it('按官方规则签名 TikTok、Temu 并验证 TikTok Webhook',()=>{

@@ -3,10 +3,10 @@ import {FlowError} from './types';
 import type {CommerceOrder,CommerceRecord,ConnectorStatus} from './connectors';
 
 export const agentIntentSchema=z.object({
-  action:z.enum(['help','status','set_goal','set_budget','set_interval','start','pause','run','sync','discover','content']),
+  action:z.enum(['chat','status','set_goal','set_budget','set_interval','start','pause','run','sync','discover','content']),
   value:z.string().max(1000).default(''), explanation:z.string().max(600).default('')
 }).strict();
-export type AgentIntent=z.infer<typeof agentIntentSchema>;
+export type AgentIntent=z.infer<typeof agentIntentSchema>|{action:'help';value:string;explanation:string};
 export type CommerceAgentState={
   status:'idle'|'active'|'paused'|'blocked';mode:'autonomous';objective:string;cycleBudgetCents:number;cycleIntervalSeconds:number;
   owner:{id:string;username:string}|null;lastAction:string;lastError:string;lastCycleAt?:string;nextCycleAt?:string;version:number;updatedAt:string;
