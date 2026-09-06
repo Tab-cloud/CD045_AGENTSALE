@@ -29,6 +29,13 @@ export type PublicSettings = Settings & { hasApiKey: boolean; hasSearchKey: bool
 export const defaults: Settings = { baseUrl:'https://api.openai.com/v1',model:'',localModel:false,format:'json_schema',protocol:'openai',minimax:minimaxSchema.parse({}),tokenParameter:'max_completion_tokens',maxTokens:4096,callLimitCents:0,dailyLimitCents:0,searchCallCents:1,allowedDomains:[],connectors:connectorSettingsSchema.parse({}) };
 export type User = { id:string; username:string; role:'admin'|'operator'; enabled:boolean };
 export type Source = { id:string; url:string; title:string; text:string; hash:string; fetchedAt:string; status:'fetched'|'imported'|'unavailable'; error?:string };
+export type WebSearchHit = { url:string; title:string; description:string; source:'brave' };
+export type ResearchToolName = 'web.search'|'web.fetch';
+export type ResearchToolRun = {
+  id:string; iteration:number; tool:ResearchToolName; status:'succeeded'|'failed'|'rejected';
+  input:{query?:string;url?:string}; reason:string; summary:string; startedAt:string; finishedAt:string;
+};
+export type ResearchPlanTrace = { iteration:number; assessment:string; complete:boolean; gaps:string[]; createdAt:string };
 export const citationSchema = z.object({ sourceId:text(100), quote:text(500) }).strict();
 export const researchSchema = z.object({
   summary:text(1500), recommendation:z.enum(['investigate','sample_test','reject']),
@@ -36,7 +43,7 @@ export const researchSchema = z.object({
     mainlandEvidence:citationSchema.nullable(), dropshipEvidence:citationSchema.nullable(),
     markets:z.array(z.object({country:text(100),shippingEvidence:citationSchema,rationale:text(600)}).strict()).max(8),
     concerns:z.array(text(400)).max(10)
-  }).strict()).min(1).max(6),
+  }).strict()).max(6),
   selectedIndex:z.number().int().min(0).max(5).nullable(), market:text(100).nullable(),
   reasoning:text(1800), missing:z.array(text(400)).max(15),
   inquiry:z.object({subject:text(200),body:text(5000)}).strict()
@@ -58,7 +65,7 @@ export type Job = { id:string;workspaceId:string;createdBy:string;requestHash:st
   kind:'discovery'|'launch'|'render'|'content';state:'queued'|'running'|'blocked'|'paused'|'waiting_review'|'succeeded'|'cancelled';version:number;
   input:{query:string;urls:string[];product?:Product;script?:Copy;assetId?:string;budgetCents:number;voiceover?:boolean;videoMode?:'slideshow'|'minimax'};
   remoteVideo?:{taskId:string;endpoint:string;fileId?:string;status:string;submittedAt:string};nextRunAt?:string;
-  steps:Step[];sources:Source[];research?:Research;copy?:Copy;cost?:unknown;
+  steps:Step[];sources:Source[];research?:Research;copy?:Copy;cost?:unknown;toolRuns?:ResearchToolRun[];researchPlans?:ResearchPlanTrace[];researchGaps?:string[];
   artifacts:{name:string;file:string;mime:string;bytes:number;hash:string}[];
   error:string;lease:string|null;createdAt:string;updatedAt:string;reviewedBy?:string;
 };

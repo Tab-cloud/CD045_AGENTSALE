@@ -1,5 +1,6 @@
 'use client';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
+import Link from 'next/link';
 import {ArrowUp,Check,Clock3,Pause,Play,RefreshCw,Settings2,Sparkles} from 'lucide-react';
 import type {CommerceAgentSnapshot} from '@agentsale/automation';
 import {QuickSettings} from './quick-settings';
@@ -29,7 +30,7 @@ export function AgentConsole(){
         <div className="conversation-footer"><span>最近动作：{state?.lastAction||'尚未开始'}</span><div>{state?.status==='active'?<button onClick={()=>void send('/pause')} disabled={busy}><Pause size={14}/>暂停</button>:<button onClick={()=>void send('/start')} disabled={busy}><Play size={14}/>启动</button>}<button onClick={()=>void load()}><RefreshCw size={14}/>刷新</button></div></div>
       </section>
       <aside className="task-panel"><div className="task-panel-heading"><div><span>任务节点</span><b>{jobs.length}</b></div><small>{completed} 已完成</small></div>
-        <div className="task-list">{jobs.length?jobs.map((job,index)=><article className={'task-node '+job.state} key={job.id}><div className="task-node-marker">{job.state==='succeeded'?<Check size={13}/>:<Clock3 size={13}/>}</div><div><span>节点 {String(jobs.length-index).padStart(2,'0')}</span><h2>{jobText[job.kind]||job.kind}</h2><p>{jobState[job.state]||job.state} · {new Date(job.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</p><code>{job.id.slice(0,8)}</code></div></article>):<div className="task-empty"><Clock3 size={22}/><p>Agent 创建任务后，会在这里显示执行节点和状态。</p></div>}</div>
+        <div className="task-list">{jobs.length?jobs.map((job,index)=><Link href={'/automation/jobs/'+job.id} className={'task-node '+job.state} aria-label={'打开任务：'+(jobText[job.kind]||job.kind)} key={job.id}><div className="task-node-marker">{job.state==='succeeded'?<Check size={13}/>:<Clock3 size={13}/>}</div><div><span>节点 {String(jobs.length-index).padStart(2,'0')}</span><h2>{jobText[job.kind]||job.kind}</h2><p>{jobState[job.state]||job.state} · {new Date(job.createdAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</p><code>{job.id.slice(0,8)}</code></div></Link>):<div className="task-empty"><Clock3 size={22}/><p>Agent 创建任务后，会在这里显示执行节点和状态。</p></div>}</div>
         <div className="task-summary"><div><span>订单</span><b>{data?.orders.length||0}</b></div><div><span>财务 / 售后</span><b>{data?.records.filter(item=>['finance_statement','aftersale'].includes(item.recordType)).length||0}</b></div><div><span>下次周期</span><b>{state?.nextCycleAt?new Date(state.nextCycleAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}):'—'}</b></div></div>
         {state?.lastError&&<div className="task-blocker"><span>当前阻塞</span><p>{state.lastError.replace(/^[A-Z_]+：/,'')}</p></div>}
       </aside>

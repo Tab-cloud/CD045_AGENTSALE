@@ -5,7 +5,7 @@ import { assessCosts } from '@agentsale/domain';
 import { defaultCosts } from '@agentsale/contracts';
 import { createFlowStore } from './storage';
 import { createVault } from './vault';
-import { assertProvider,searchSuppliers,research,marketing,verifyModel,modelJson } from './providers';
+import { assertProvider,webSearch,research,marketing,verifyModel,modelJson } from './providers';
 import { fetchSource } from './network';
 import { renderVideo,packageFiles,hash,saveAsset,ownedFile } from './media';
 import { FlowError,type Job,type Source,type User } from './types';
@@ -15,9 +15,10 @@ import { createMinimax,assertMinimax } from './minimax';
 import { agentHelp,agentIntentSchema,inferAgentIntent,parseAgentSlash,type AgentIntent,type CommerceAgentMessage,type CommerceAgentSnapshot,type CommerceAgentState } from './agent';
 import {createCommerceConnectors} from './connectors';
 import {contextSummarySchema,createContextManager} from './context';
+import {planResearch,runWebResearch} from './research-tools';
 
-export type Adapters={fetchSource:typeof fetchSource;search:typeof searchSuppliers;research:typeof research;marketing:typeof marketing;render:typeof renderVideo;package:typeof packageFiles;poster:typeof renderPosters;minimax:ReturnType<typeof createMinimax>};
-const adapters:Adapters={fetchSource,search:searchSuppliers,research,marketing,render:renderFinalVideo,package:packageFiles,poster:renderPosters,minimax:createMinimax()};
+export type Adapters={fetchSource:typeof fetchSource;search:typeof webSearch;research:typeof research;marketing:typeof marketing;render:typeof renderVideo;package:typeof packageFiles;poster:typeof renderPosters;minimax:ReturnType<typeof createMinimax>};
+const adapters:Adapters={fetchSource,search:webSearch,research,marketing,render:renderFinalVideo,package:packageFiles,poster:renderPosters,minimax:createMinimax()};
 export function createAutomation(repo:Repository,workspace:string,root:string,overrides:Partial<Adapters>={}){
   const store=createFlowStore(repo,workspace),vault=createVault(root+'/private'),commerce=createCommerceConnectors(repo,workspace,vault),providers={...adapters,...overrides};
   const context=createContextManager(repo,workspace,async(settings,prompt)=>{
@@ -34,7 +35,7 @@ export function createAutomation(repo:Repository,workspace:string,root:string,ov
     catch(e){await store.settle(reserve,'unknown',null);throw e;}
   }
   async function collect(job:Job){
-    const settings=await vault.get(),urls=[...new Set([...job.input.urls,...(job.input.product?[job.input.product.sourceUrl]:[])])].slice(0,5),sources:Source[]=[];
+    const settings=await vault.get(),urls=job.toolRuns?[]:[...new Set([...job.input.urls,...(job.input.product?[job.input.product.sourceUrl]:[])])].slice(0,5),sources:Source[]=[...job.sources];
     for(const url of urls){try{sources.push(await providers.fetchSource(url,settings.allowedDomains));}catch(e){sources.push({id:hash(url).slice(0,16),url,title:new URL(url).hostname,text:'',hash:'',fetchedAt:new Date().toISOString(),status:'unavailable',error:e instanceof FlowError?e.message:'网页采集失败'});}}
     if(job.input.product){const snapshot=await repo.snapshot(workspace);for(const e of snapshot.evidence.filter(e=>e.productId===job.productId)){sources.push({id:e.id,url:e.url,title:e.title,text:e.note,hash:hash(e.note),status:'imported',fetchedAt:new Date().toISOString()});}
       if(job.input.product.description)sources.push({id:'product-description',url:job.input.product.sourceUrl,title:'商品录入资料',text:job.input.product.description,hash:hash(job.input.product.description),status:'imported',fetchedAt:new Date().toISOString()});}
@@ -43,7 +44,13 @@ export function createAutomation(repo:Repository,workspace:string,root:string,ov
   async function tick(){
     const claim=await store.claim();if(!claim)return false;const {job,step,lease}=claim;let patch:Partial<Job>={};
     try{
-      if(step==='discover'){const urls=job.input.urls.length?job.input.urls:await paid(job,'search',s=>providers.search(job.input.query,s));patch={input:{...job.input,urls}};}
+      if(step==='discover'){
+        const settings=await vault.get(),discovery=await runWebResearch({objective:job.input.query,seedUrls:job.input.urls,searchAvailable:!!settings.searchKey,
+          plan:async(state,catalog)=>(await paid(job,'model',s=>planResearch(s,state,catalog))).data,
+          search:query=>paid(job,'search',s=>providers.search(query,s)),
+          fetch:url=>providers.fetchSource(url,settings.allowedDomains)});
+        patch={input:{...job.input,urls:discovery.urls},sources:discovery.sources,toolRuns:discovery.toolRuns,researchPlans:discovery.researchPlans,researchGaps:discovery.gaps};
+      }
       if(step==='sources'){const sources=await collect(job);patch={sources};if(!sources.some(s=>s.status!=='unavailable'&&s.text.length>=80)){await store.finish(job.id,lease,step,patch,'SOURCE_UNAVAILABLE：没有足够的可读来源，请补充供货资料');return true;}}
       if(step==='cost')patch={cost:assessCosts(job.input.product!.costs)};
       if(step==='research'){const output=await paid(job,'model',s=>providers.research(job,s));patch={research:output.data};}

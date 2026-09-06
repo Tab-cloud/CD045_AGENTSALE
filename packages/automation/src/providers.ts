@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { requestBytes,validUrl } from './network';
-import { FlowError,researchSchema,contentSchema,type SecretSettings,type Source,type Research,type Copy,type Job } from './types';
+import { FlowError,researchSchema,contentSchema,type SecretSettings,type Source,type Research,type Copy,type Job,type WebSearchHit } from './types';
 
 export function assertProvider(config:SecretSettings,verified=true){
   if(!config.model)throw new FlowError('MODEL_UNCONFIGURED','请管理员配置模型名称和接口');
@@ -39,15 +39,16 @@ export async function modelJson<T>(config:SecretSettings,schema:z.ZodType<T>,nam
   return {data:parsed.data,usage:result.usage||null,model:typeof result.model==='string'?result.model:config.model};
 }
 export async function verifyModel(config:SecretSettings){return modelJson(config,z.object({ready:z.literal(true)}).strict(),'connection_check','Return exactly {"ready":true}.',true);}
-export async function searchSuppliers(query:string,config:SecretSettings){
+export async function webSearch(query:string,config:SecretSettings):Promise<WebSearchHit[]>{
   if(!config.searchKey)throw new FlowError('SEARCH_UNCONFIGURED','请管理员配置 Brave Search，或在本次流程提供可采集的供应商链接');
   const response=await requestBytes('https://api.search.brave.com/res/v1/web/search?q='+encodeURIComponent(query)+'&count=6&safesearch=strict',{headers:{Accept:'application/json','X-Subscription-Token':config.searchKey}});
   if(response.status!==200)throw new FlowError('SEARCH_HTTP','搜索服务返回 '+response.status+'，请检查搜索密钥与额度');
   let data:any;try{data=JSON.parse(response.body.toString());}catch{throw new FlowError('SEARCH_RESPONSE','搜索服务响应无效');}
-  const urls:string[]=[];
-  for(const item of data.web?.results||[]){try{const u=validUrl(item.url);if(!config.allowedDomains.length||config.allowedDomains.some(d=>u.hostname===d||u.hostname.endsWith('.'+d)))urls.push(u.href);}catch{}}
-  if(!urls.length)throw new FlowError('SEARCH_EMPTY','搜索未找到允许范围内的供应商来源，请调整品类词或域名范围');return [...new Set(urls)].slice(0,5);
+  const hits:WebSearchHit[]=[];
+  for(const item of data.web?.results||[]){try{const u=validUrl(item.url);if((!config.allowedDomains.length||config.allowedDomains.some(d=>u.hostname===d||u.hostname.endsWith('.'+d)))&&!hits.some(hit=>hit.url===u.href))hits.push({url:u.href,title:String(item.title||u.hostname).slice(0,250),description:String(item.description||'').replace(/\s+/g,' ').trim().slice(0,600),source:'brave'});}catch{}}
+  if(!hits.length)throw new FlowError('SEARCH_EMPTY','搜索未找到允许范围内的供应商来源，请调整品类词或域名范围');return hits.slice(0,6);
 }
+export async function searchSuppliers(query:string,config:SecretSettings){return (await webSearch(query,config)).map(hit=>hit.url).slice(0,5);}
 const normalize=(s:string)=>s.replace(/\s+/g,' ').trim();
 export function validateResearch(report:Research,sources:Source[]):Research {
   for(const candidate of report.candidates){

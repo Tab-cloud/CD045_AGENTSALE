@@ -5,4 +5,5 @@ export { safeSettings } from './vault';
 export { mediaHealth,ownedFile } from './media';
 export * from './agent';
 export * from './context';
+export * from './research-tools';
 export * from './connectors';

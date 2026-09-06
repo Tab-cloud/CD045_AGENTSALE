@@ -10,13 +10,14 @@ import { createRepository,type Repository } from '../packages/database/src';
 import { defaultCosts } from '../packages/contracts/src';
 import { createAuth } from '../packages/automation/src/auth';
 import { createAutomation } from '../packages/automation/src/engine';
-import { defaults,type Source,type Research,type Copy,type User,FlowError } from '../packages/automation/src/types';
+import { defaults,researchSchema,type Source,type Research,type Copy,type User,FlowError } from '../packages/automation/src/types';
 import { isPublicAddress,validUrl,robotsAllows,extractSource,requestBytes } from '../packages/automation/src/network';
 import { validateResearch,modelJson,marketing } from '../packages/automation/src/providers';
 import { createFlowStore } from '../packages/automation/src/storage';
 import { safeSettings } from '../packages/automation/src/vault';
 import { agentIntentSchema,inferAgentIntent,parseAgentSlash } from '../packages/automation/src/agent';
 import {createCommerceConnectors,signTemu,signTikTok,verifyTikTokWebhook} from '../packages/automation/src/connectors';
+import {runWebResearch} from '../packages/automation/src/research-tools';
 import { mediaHealth,command } from '../packages/automation/src/media';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -32,7 +33,7 @@ const received:any[]=[];
 const actor:User={id:randomUUID(),username:'test-admin',role:'admin',enabled:true};
 beforeAll(async()=>{
   repo=await createRepository();root=await mkdtemp(path.join(os.tmpdir(),'agentsale-automation-'));
-  server=createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{const input=JSON.parse(body);received.push(input);const name=input.response_format?.json_schema?.name;const content=name==='connection_check'?{ready:true}:name==='supplier_research'?report:name==='agent_context_compaction'?compactedContext:name==='commerce_agent_intent'?{action:'chat',value:'你好，我可以和你一起梳理商品、市场和自动化任务。',explanation:'普通问候'}:copy;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture-http-model',choices:[{finish_reason:'stop',message:{content:JSON.stringify(content)}}],usage:{prompt_tokens:30,completion_tokens:100}}));});});
+  server=createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{const input=JSON.parse(body);received.push(input);const name=input.response_format?.json_schema?.name,prompt=String(input.messages?.at(-1)?.content||''),toolPlan=prompt.includes('"sources":[]')?(prompt.includes('"candidateUrls":[]')?{assessment:'需要先搜索供货来源',actions:[{tool:'web.search',query:'China mainland single item dropshipping Germany lightweight product',url:'',reason:'寻找候选供应商页面'}],complete:false,gaps:['缺少供货来源']}:{assessment:'需要读取候选页面',actions:[{tool:'web.fetch',query:'',url:source.url,reason:'核实大陆供货、单件代发和德国配送'}],complete:false,gaps:['需要核对网页正文']}):{assessment:'已有可供证据审查的网页正文',actions:[],complete:true,gaps:['报价与样品待线下核验']};const content=name==='connection_check'?{ready:true}:name==='supplier_research'?report:name==='research_tool_plan'?toolPlan:name==='agent_context_compaction'?compactedContext:name==='commerce_agent_intent'?{action:'chat',value:'你好，我可以和你一起梳理商品、市场和自动化任务。',explanation:'普通问候'}:copy;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture-http-model',choices:[{finish_reason:'stop',message:{content:JSON.stringify(content)}}],usage:{prompt_tokens:30,completion_tokens:100}}));});});
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));baseUrl='http://127.0.0.1:'+(server.address() as {port:number}).port+'/v1';
 });
 afterAll(async()=>{await repo.close();await new Promise<void>(resolve=>server.close(()=>resolve()));if(path.basename(root).startsWith('agentsale-automation-')&&path.dirname(root)===os.tmpdir())await rm(root,{recursive:true,force:true});});
@@ -139,6 +140,11 @@ describe('来源与输出证据',()=>{
   });
 });
 describe('真实协议与持久流程',()=>{
+  it('不适合的来源可以返回空候选，不强迫模型制造供应商',()=>{expect(researchSchema.safeParse({summary:'来源不是商品供应商',recommendation:'reject',candidates:[],selectedIndex:null,market:null,reasoning:'没有大陆供货、单件代发和国家配送证据',missing:['需要其他来源'],inquiry:{subject:'无需询价',body:'当前来源不属于供应商，不发送询价。'}}).success).toBe(true);});
+  it('研究工具拒绝抓取未由用户或搜索提供的地址',async()=>{
+    let fetched=false;const result=await runWebResearch({objective:'测试工具边界',seedUrls:[],searchAvailable:false,search:async()=>[],fetch:async()=>{fetched=true;return source;},plan:async state=>state.iteration===1?{assessment:'尝试未知地址',actions:[{tool:'web.fetch',query:'',url:'https://untrusted.example/product',reason:'测试'}],complete:false,gaps:['缺少来源']}:{assessment:'没有合规来源',actions:[],complete:false,gaps:['缺少来源']}});
+    expect(fetched).toBe(false);expect(result.sources).toHaveLength(0);expect(result.toolRuns).toMatchObject([{tool:'web.fetch',status:'rejected'}]);
+  });
   it('已有商品可独立生成草稿，但供货复核流程仍要求配送证据',async()=>{
     const w=randomUUID(),e=await engine(w),p=await product(w);
     const job=await e.store.create({kind:'content',productId:p.id,expectedVersion:1,budgetCents:0},actor,randomUUID());
@@ -157,6 +163,12 @@ describe('真实协议与持久流程',()=>{
     for(let i=0;i<4;i++)expect(await e.tick()).toBe(true);
     const result=await e.store.get(job.id);expect(result.state).toBe('waiting_review');expect(result.research?.market).toBe('Germany');expect(result.productId).toBeTruthy();expect((await repo.snapshot(w)).products[0].market).toBe('Germany');
     expect(result.artifacts.some(a=>a.name==='supplier-inquiry.txt')).toBe(true);expect(await e.tick()).toBe(false);
+  });
+  it('调研 Agent 可自主搜索、读取网页并保存每次工具调用轨迹',async()=>{
+    const w=randomUUID(),e=createAutomation(repo,w,path.join(root,w),{fetchSource:async()=>source,search:async()=>[{url:source.url,title:source.title,description:'China supplier with dropshipping to Germany',source:'brave'}]});
+    await e.vault.save({...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100},undefined,'FIXTURE-SEARCH-KEY');await e.verify();
+    const job=await e.store.create({kind:'discovery',urls:[],budgetCents:10},actor,randomUUID());expect(await e.tick()).toBe(true);
+    const result=await e.store.get(job.id);expect(result.sources).toMatchObject([{id:source.id,status:'fetched'}]);expect(result.toolRuns?.map(run=>[run.tool,run.status])).toEqual([['web.search','succeeded'],['web.fetch','succeeded']]);expect(result.researchPlans?.at(-1)).toMatchObject({complete:true});expect(result.researchGaps).toContain('报价与样品待线下核验');
   });
   it('配置串行保存，旧连接验证不能覆盖新配置；切换端点清除原模型密钥',async()=>{
     const e=await engine(),settings={...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100};await e.vault.save(settings,'OLD-ENDPOINT-KEY','SEARCH-KEY');const before=await e.vault.get();
