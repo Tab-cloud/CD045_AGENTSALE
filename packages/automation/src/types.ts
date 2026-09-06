@@ -2,18 +2,31 @@ import { z } from 'zod';
 import type { Product } from '@agentsale/contracts';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
+const optionalUrl=z.union([z.literal(''),z.string().url().max(500)]);
+const bridgeSchema=z.object({enabled:z.boolean().default(false),autoExecute:z.boolean().default(false),baseUrl:optionalUrl.default('')}).strict();
+export const connectorSettingsSchema=z.object({
+  tiktokShop:z.object({enabled:z.boolean().default(false),baseUrl:z.enum(['https://open-api.tiktokglobalshop.com']).default('https://open-api.tiktokglobalshop.com'),appKey:z.string().trim().max(200).default(''),shopCipher:z.string().trim().max(500).default('')}).strict().default({enabled:false,baseUrl:'https://open-api.tiktokglobalshop.com',appKey:'',shopCipher:''}),
+  tiktokContent:z.object({enabled:z.boolean().default(false),baseUrl:z.enum(['https://open.tiktokapis.com']).default('https://open.tiktokapis.com'),privacyLevel:z.enum(['SELF_ONLY','FOLLOWER_OF_CREATOR','MUTUAL_FOLLOW_FRIENDS','PUBLIC_TO_EVERYONE']).default('SELF_ONLY'),directPost:z.boolean().default(false)}).strict().default({enabled:false,baseUrl:'https://open.tiktokapis.com',privacyLevel:'SELF_ONLY',directPost:false}),
+  temu:z.object({enabled:z.boolean().default(false),baseUrl:z.enum(['https://openapi-b-us.temu.com/openapi/router','https://openapi-b-eu.temu.com/openapi/router','https://openapi-b-global.temu.com/openapi/router']).default('https://openapi-b-global.temu.com/openapi/router'),appKey:z.string().trim().max(200).default('')}).strict().default({enabled:false,baseUrl:'https://openapi-b-global.temu.com/openapi/router',appKey:''}),
+  supplierBridge:bridgeSchema.default(()=>bridgeSchema.parse({})),assetBridge:bridgeSchema.default(()=>bridgeSchema.parse({})),logisticsBridge:bridgeSchema.default(()=>bridgeSchema.parse({})),customerBridge:bridgeSchema.default(()=>bridgeSchema.parse({}))
+}).strict();
+export type ConnectorSettings=z.infer<typeof connectorSettingsSchema>;
+export const connectorSecretKeys=['tiktokShopAppSecret','tiktokShopAccessToken','tiktokContentAccessToken','temuAppSecret','temuAccessToken','supplierBridgeToken','assetBridgeToken','logisticsBridgeToken','customerBridgeToken'] as const;
+export type ConnectorSecretKey=typeof connectorSecretKeys[number];
+export type ConnectorSecrets=Record<ConnectorSecretKey,string>;
+export const emptyConnectorSecrets=Object.fromEntries(connectorSecretKeys.map(key=>[key,''])) as ConnectorSecrets;
 export const minimaxSchema=z.object({baseUrl:z.enum(['https://api.minimax.cn/v1','https://api.minimaxi.com/v1','https://api.minimax.io/v1']).default('https://api.minimax.cn/v1'),speechModel:text(100).default('speech-2.8-hd'),voiceId:text(100).default('English_Trustworthy_Man'),videoModel:z.enum(['MiniMax-Hailuo-2.3','MiniMax-Hailuo-2.3-Fast','MiniMax-Hailuo-02']).default('MiniMax-Hailuo-2.3'),speechLimitCents:z.number().int().min(0).max(10000).default(0),videoLimitCents:z.number().int().min(0).max(10000).default(0)}).strict();
 export const settingsSchema = z.object({
   baseUrl: z.string().url().max(500), model: text(100),
   localModel: z.boolean(), format: z.enum(['json_schema','json_object','prompt_json']),protocol:z.enum(['openai','minimax']).default('openai'),minimax:minimaxSchema.default(()=>minimaxSchema.parse({})),
   tokenParameter: z.enum(['max_completion_tokens','max_tokens']), maxTokens: z.number().int().min(512).max(8192),
   callLimitCents: z.number().int().min(0).max(10000), dailyLimitCents: z.number().int().min(0).max(100000),
-  searchCallCents: z.number().int().min(1).max(1000), allowedDomains: z.array(text(253)).max(30)
+  searchCallCents: z.number().int().min(1).max(1000), allowedDomains: z.array(text(253)).max(30),connectors:connectorSettingsSchema.default(()=>connectorSettingsSchema.parse({}))
 }).strict();
 export type Settings = z.infer<typeof settingsSchema>;
-export type SecretSettings = Settings & { apiKey: string; searchKey: string; minimaxKey:string; verifiedAt: string | null; revision: string };
-export type PublicSettings = Settings & { hasApiKey: boolean; hasSearchKey: boolean;hasMinimaxKey:boolean; verifiedAt: string | null; revision: string };
-export const defaults: Settings = { baseUrl:'https://api.openai.com/v1',model:'',localModel:false,format:'json_schema',protocol:'openai',minimax:minimaxSchema.parse({}),tokenParameter:'max_completion_tokens',maxTokens:4096,callLimitCents:0,dailyLimitCents:0,searchCallCents:1,allowedDomains:[] };
+export type SecretSettings = Settings & { apiKey: string; searchKey: string; minimaxKey:string;connectorSecrets:ConnectorSecrets; verifiedAt: string | null; revision: string };
+export type PublicSettings = Settings & { hasApiKey: boolean; hasSearchKey: boolean;hasMinimaxKey:boolean;connectorSecretStatus:Record<ConnectorSecretKey,boolean>; verifiedAt: string | null; revision: string };
+export const defaults: Settings = { baseUrl:'https://api.openai.com/v1',model:'',localModel:false,format:'json_schema',protocol:'openai',minimax:minimaxSchema.parse({}),tokenParameter:'max_completion_tokens',maxTokens:4096,callLimitCents:0,dailyLimitCents:0,searchCallCents:1,allowedDomains:[],connectors:connectorSettingsSchema.parse({}) };
 export type User = { id:string; username:string; role:'admin'|'operator'; enabled:boolean };
 export type Source = { id:string; url:string; title:string; text:string; hash:string; fetchedAt:string; status:'fetched'|'imported'|'unavailable'; error?:string };
 export const citationSchema = z.object({ sourceId:text(100), quote:text(500) }).strict();

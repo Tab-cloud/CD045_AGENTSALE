@@ -27,7 +27,7 @@ export function providerAddressAllowed(url:URL,address:string,trustedMiniMax=fal
   const official=['api.minimaxi.com','api.minimax.cn','api.minimax.io','filecdn.minimax.chat','public-cdn-video-data-algeng.oss-cn-wulanchabu.aliyuncs.com'].includes(url.hostname);
   return isPublicAddress(address)||(trustedMiniMax&&official&&url.protocol==='https:'&&(!url.port||url.port==='443')&&/^198\.(18|19)\./.test(address));
 }
-export async function requestBytes(raw:string,options:{method?:string;headers?:Record<string,string>;body?:string;local?:boolean;trustedMiniMax?:boolean;timeout?:number;maxBytes?:number;redirects?:number;allowedDomains?:string[]}={}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer;url:string}>{
+export async function requestBytes(raw:string,options:{method?:string;headers?:Record<string,string>;body?:string|Buffer;local?:boolean;trustedMiniMax?:boolean;timeout?:number;maxBytes?:number;redirects?:number;allowedDomains?:string[]}={}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer;url:string}>{
   const url=validUrl(raw,options.local),hostname=url.hostname.replace(/^\[|\]$/g,'');
   if(options.allowedDomains?.length&&!options.allowedDomains.some(d=>url.hostname===d||url.hostname.endsWith('.'+d)))throw new FlowError('DOMAIN_RESTRICTED','请求域名不在管理员允许范围');
   let timer:ReturnType<typeof setTimeout>|undefined;

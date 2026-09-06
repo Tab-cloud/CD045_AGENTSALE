@@ -38,7 +38,7 @@ export function DecisionCenter({snapshot,send,busy}:{snapshot:Snapshot;send:Send
     }catch(error){setFormError(error instanceof Error?error.message:'无法保存市场数据');}
   }
   return <div className="decision-center">
-    <section className="decision-intro"><div><span className="eyebrow">MARKET DECISION</span><h2>用真实指标决定是否测试</h2><p>评分只使用已保存的平台快照、成本和供货资料。TikTok Shop、Temu 当前由授权导出或人工核对录入，不会把公开累计数字冒充真实成交。</p></div><div className="decision-kpis"><span><b>{snapshot.decisions.length}</b> 个市场组合</span><span><b>{snapshot.marketSignals.length}</b> 期数据快照</span></div></section>
+    <section className="decision-intro"><div><span className="eyebrow">MARKET DECISION</span><h2>用真实指标决定是否测试</h2><p>评分只使用已保存的平台快照、成本和供货资料。已验证的 TikTok Shop、Temu 连接器会自动同步授权店铺数据，也可补充授权导出或人工核对资料。</p></div><div className="decision-kpis"><span><b>{snapshot.decisions.length}</b> 个市场组合</span><span><b>{snapshot.marketSignals.length}</b> 期数据快照</span></div></section>
     {snapshot.decisions.length?<div className="decision-grid">{snapshot.decisions.map(item=><DecisionCard key={item.id} decision={item} productName={snapshot.products.find(p=>p.id===item.productId)?.name||'未知商品'}/>)}</div>:<div className="empty decision-empty"><h2>还没有可评分的市场数据</h2><p>选择一款商品，录入同一国家、同一平台、同一统计口径的数据。系统会保留每期快照并在第二期开始计算趋势。</p></div>}
     <section className="signal-entry"><div className="sectionrow"><div><h2>新增平台数据快照</h2><p className="muted small">空值不会按零分处理，而是降低数据覆盖率和决策置信度。</p></div><span className="status">人工录入</span></div>
       <form onSubmit={submit}>

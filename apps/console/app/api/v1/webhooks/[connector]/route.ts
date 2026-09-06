@@ -1,0 +1,10 @@
+import {createHash,timingSafeEqual} from 'node:crypto';
+import {connectorIds,signTemu,verifyTikTokWebhook,type ConnectorId,type ConnectorSecretKey} from '@agentsale/automation';
+import {getAutomation} from '../../../../../lib/local-runtime';
+export const runtime='nodejs';export const dynamic='force-dynamic';
+function equal(a:string,b:string){const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);}
+export async function POST(request:Request,context:{params:Promise<{connector:string}>}){const {connector}=await context.params;if(!connectorIds.includes(connector as ConnectorId))return Response.json({message:'未知连接器'},{status:404});const id=connector as ConnectorId,raw=Buffer.from(await request.arrayBuffer());if(raw.length>1_000_000)return Response.json({message:'事件内容过大'},{status:413});const engine=await getAutomation(),settings=await engine.vault.get();let payload:any;try{payload=JSON.parse(raw.toString('utf8'));}catch{return Response.json({message:'事件不是有效 JSON'},{status:400});}
+  let authorized=false;if(id==='tiktok_shop')authorized=verifyTikTokWebhook(raw,request.headers.get('authorization'),settings.connectors.tiktokShop.appKey,settings.connectorSecrets.tiktokShopAppSecret);
+  else if(id==='temu'){const given=String(payload.sign||'').toUpperCase(),expected=signTemu(payload,settings.connectorSecrets.temuAppSecret);authorized=!!given&&equal(given,expected);}
+  else {const name={supplier_bridge:'supplierBridgeToken',asset_bridge:'assetBridgeToken',logistics_bridge:'logisticsBridgeToken',customer_bridge:'customerBridgeToken',tiktok_content:'tiktokContentAccessToken'}[id] as ConnectorSecretKey,token=settings.connectorSecrets[name],given=request.headers.get('authorization')||'';authorized=!!token&&equal(given,`Bearer ${token}`);}
+  if(!authorized)return new Response(null,{status:401});const externalId=String(payload.tts_notification_id||payload.message_id||payload.event_id||payload.id||createHash('sha256').update(raw).digest('hex')),kind=String(payload.event_type||payload.type||'event'),result=await engine.commerce.receiveEvent(id,externalId,kind,payload);return Response.json(result,{status:200});}
