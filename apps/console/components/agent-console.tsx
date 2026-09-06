@@ -2,15 +2,14 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {ArrowUp,Check,Clock3,Pause,Play,RefreshCw,Settings2,Sparkles} from 'lucide-react';
 import type {CommerceAgentSnapshot} from '@agentsale/automation';
+import {QuickSettings} from './quick-settings';
 
 const stateText={idle:'等待目标',active:'自动运行',paused:'已暂停',blocked:'需要处理'} as const;
 const jobText:Record<string,string>={discovery:'选品与供应商调研',launch:'商品启动准备',render:'海报与视频制作',content:'商品内容生成'};
 const jobState:Record<string,string>={queued:'等待执行',running:'执行中',blocked:'需要信息',paused:'已暂停',waiting_review:'内部审阅',succeeded:'已完成',cancelled:'已取消'};
 const prompts=['寻找适合美国市场、支持中国单件代发的轻小商品','查看当前进度','同步店铺订单和售后','/help'];
-const adminUrl='http://127.0.0.1:3047';
-
 export function AgentConsole(){
-  const [data,setData]=useState<CommerceAgentSnapshot|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+  const [data,setData]=useState<CommerceAgentSnapshot|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[settingsOpen,setSettingsOpen]=useState(false);
   const messageList=useRef<HTMLDivElement>(null);
   async function load(){const response=await fetch('/api/v1/agent',{cache:'no-store'}),body=await response.json();if(!response.ok)throw new Error(body.message||'无法读取 Agent');setData(body);setError('');}
   useEffect(()=>{const refresh=()=>void load().catch(e=>setError(e.message));refresh();const timer=setInterval(refresh,3000);return()=>clearInterval(timer);},[]);
@@ -19,7 +18,7 @@ export function AgentConsole(){
   function submit(event:FormEvent){event.preventDefault();void send();}
   const state=data?.state,jobs=data?.jobs||[],completed=jobs.filter(job=>job.state==='succeeded').length;
   return <main className="workbench">
-    <header className="workbench-header"><div><span className="workbench-brand">AgentSale</span><span className="workbench-subtitle">Autonomous commerce agent</span></div><div className="workbench-actions"><span className={'workbench-state '+(state?.status||'idle')}><i/>{state?stateText[state.status]:'连接中'}</span><a href={adminUrl} aria-label="打开服务配置"><Settings2 size={17}/>配置</a></div></header>
+    <header className="workbench-header"><div><span className="workbench-brand">AgentSale</span><span className="workbench-subtitle">Autonomous commerce agent</span></div><div className="workbench-actions"><span className={'workbench-state '+(state?.status||'idle')}><i/>{state?stateText[state.status]:'连接中'}</span><button onClick={()=>setSettingsOpen(true)} aria-label="打开服务配置"><Settings2 size={17}/>配置</button></div></header>
     <div className="workbench-grid">
       <section className="conversation" aria-label="Agent 对话">
         <div className="conversation-heading"><span>当前目标</span><h1>{state?.objective||'告诉我想经营什么商品或市场'}</h1><p>直接描述目标。Agent 会自行调研、决策并创建任务节点，你也可以用 /命令精确控制。</p></div>
@@ -35,5 +34,6 @@ export function AgentConsole(){
         {state?.lastError&&<div className="task-blocker"><span>当前阻塞</span><p>{state.lastError.replace(/^[A-Z_]+：/,'')}</p></div>}
       </aside>
     </div>
+    <QuickSettings open={settingsOpen} onClose={()=>setSettingsOpen(false)} onVerified={()=>void load()}/>
   </main>;
 }

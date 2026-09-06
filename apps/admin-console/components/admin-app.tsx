@@ -2,9 +2,9 @@
 import {useState} from 'react';
 import {AdminPanel} from './admin-panel';
 
-const operatorUrl=()=>typeof window==='undefined'?'#':`${window.location.protocol}//${window.location.hostname}:${Math.max(1,Number(window.location.port||'80')-2)}`;
+const operatorUrl='http://127.0.0.1:3045/';
 export function AdminApp(){
   const [dark,setDark]=useState(false);
   function toggle(){const next=!dark;setDark(next);document.body.classList.toggle('dark',next);}
-  return <div className="admin-shell"><aside><div className="admin-brand">AgentSale Control</div><div className="admin-workspace">本机系统配置</div><nav aria-label="管理导航"><a aria-current="page" href="#services">服务与权限</a></nav><div className="admin-boundary">当前为本机直接访问，账户体系后续接入。</div></aside><div><header><span>管理控制台</span><div><span>本机配置模式</span><button className="text-button" onClick={toggle}>{dark?'浅色':'深色'}</button></div></header><main id="services"><div className="page-heading"><div><span className="portal-label">LOCAL CONTROL PLANE</span><h1>服务与运行额度</h1><p>配置模型、密钥、渠道和自动执行边界。</p></div><a className="btn" href={operatorUrl()}>运营入口</a></div><AdminPanel/><footer>AgentSale · 本机管理门户 · 配置修改保留审计记录</footer></main></div></div>;
+  return <div className="admin-shell"><aside><div className="admin-brand">AgentSale Control</div><div className="admin-workspace">高级系统配置</div><nav aria-label="管理导航"><a aria-current="page" href="#services">服务与权限</a></nav><div className="admin-boundary">日常使用请返回 Agent 对话工作台。</div></aside><div><header><span>高级配置</span><div><span>本机配置模式</span><button className="text-button" onClick={toggle}>{dark?'浅色':'深色'}</button></div></header><main id="services"><div className="page-heading"><div><span className="portal-label">ADVANCED SETTINGS</span><h1>连接器与执行边界</h1><p>这里只保留低频、完整的平台连接参数。</p></div><a className="btn primary" href={operatorUrl}>返回 Agent</a></div><AdminPanel/><footer>AgentSale · 高级配置 · 配置修改保留审计记录</footer></main></div></div>;
 }
