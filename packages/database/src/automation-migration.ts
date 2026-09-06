@@ -31,10 +31,30 @@ CREATE TABLE IF NOT EXISTS commerce_agent_state (
  workspace_id text PRIMARY KEY, document jsonb NOT NULL, updated_at text NOT NULL
 );
 CREATE TABLE IF NOT EXISTS commerce_agent_messages (
- id uuid PRIMARY KEY, workspace_id text NOT NULL, role text NOT NULL CHECK(role IN ('user','assistant','system')),
+ id uuid PRIMARY KEY, sequence bigserial NOT NULL, workspace_id text NOT NULL, role text NOT NULL CHECK(role IN ('user','assistant','system')),
  kind text NOT NULL, content text NOT NULL, payload jsonb NOT NULL, created_at text NOT NULL
 );
-CREATE INDEX IF NOT EXISTS commerce_agent_messages_recent ON commerce_agent_messages(workspace_id,created_at DESC);
+ALTER TABLE commerce_agent_messages ADD COLUMN IF NOT EXISTS sequence bigserial;
+GRANT USAGE, SELECT ON SEQUENCE commerce_agent_messages_sequence_seq TO agentsale_local;
+CREATE INDEX IF NOT EXISTS commerce_agent_messages_sequence_recent ON commerce_agent_messages(workspace_id,sequence DESC);
+CREATE TABLE IF NOT EXISTS agent_context_summaries (
+ workspace_id text PRIMARY KEY, version integer NOT NULL, through_message_sequence bigint NOT NULL,
+ document jsonb NOT NULL, updated_at text NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_memories (
+ id uuid PRIMARY KEY, workspace_id text NOT NULL,
+ kind text NOT NULL CHECK(kind IN ('preference','constraint','fact','decision')),
+ subject text NOT NULL, content text NOT NULL, confidence integer NOT NULL CHECK(confidence BETWEEN 0 AND 100),
+ source_message_ids jsonb NOT NULL, valid_from text NOT NULL, valid_to text NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS agent_memories_active ON agent_memories(workspace_id,kind,valid_to,valid_from DESC);
+CREATE TABLE IF NOT EXISTS agent_context_runs (
+ id uuid PRIMARY KEY, workspace_id text NOT NULL, message_id uuid NOT NULL,
+ summary_version integer NOT NULL, recent_message_ids jsonb NOT NULL, memory_ids jsonb NOT NULL,
+ estimated_tokens integer NOT NULL, status text NOT NULL CHECK(status IN ('prepared','completed','failed')),
+ maintenance_error text NOT NULL DEFAULT '', usage jsonb NOT NULL, created_at text NOT NULL, completed_at text NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS agent_context_runs_recent ON agent_context_runs(workspace_id,created_at DESC);
 CREATE TABLE IF NOT EXISTS connector_state (
  workspace_id text NOT NULL, connector text NOT NULL, document jsonb NOT NULL, updated_at text NOT NULL,
  PRIMARY KEY(workspace_id,connector)
@@ -61,7 +81,7 @@ CREATE TABLE IF NOT EXISTS commerce_records (
  UNIQUE(workspace_id,connector,record_type,external_id)
 );
 CREATE INDEX IF NOT EXISTS commerce_records_recent ON commerce_records(workspace_id,record_type,observed_at DESC);
-${['app_users','app_sessions','automation_jobs','media_assets','automation_spend','market_signals','commerce_agent_state','commerce_agent_messages','connector_state','commerce_orders','connector_events','connector_oauth_states','commerce_records'].map(table=>`
+${['app_users','app_sessions','automation_jobs','media_assets','automation_spend','market_signals','commerce_agent_state','commerce_agent_messages','agent_context_summaries','agent_memories','agent_context_runs','connector_state','commerce_orders','connector_events','connector_oauth_states','commerce_records'].map(table=>`
 GRANT SELECT,INSERT,UPDATE,DELETE ON ${table} TO agentsale_local;
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;

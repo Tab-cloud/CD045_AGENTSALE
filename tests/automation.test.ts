@@ -26,12 +26,13 @@ const source:Source={id:'supplier-evidence',url:'https://example.com/supplier',t
 const cite=(quote:string)=>({sourceId:source.id,quote});
 const report:Research={summary:'基于测试来源选择供货方案',recommendation:'investigate',candidates:[{name:'Fixture Manufacturing',product:'Fixture desktop stand',sourceId:source.id,mainlandEvidence:cite('based in Shenzhen, China'),dropshipEvidence:cite('We offer single-unit dropshipping.'),markets:[{country:'Germany',shippingEvidence:cite('We ship directly to Germany.'),rationale:'来源明确列出目的国家'}],concerns:['样品与报价待核实']}],selectedIndex:0,market:'Germany',reasoning:'仅证明流程如何依据供货证据选择市场，不是实际供应商推荐',missing:['包装与实物验证'],inquiry:{subject:'代发合作询价',body:'请确认 MOQ、包装尺寸、德国运费、交期、售后与素材授权。'}};
 const copy:Copy=contentFixture;
+const compactedContext={objective:'在德国测试中国大陆工厂可单件代发的轻小商品',requirements:['供应商必须位于中国大陆','必须支持单件代发'],facts:[],decisions:['首个测试市场为德国'],openQuestions:['运费和交期尚未核实'],nextActions:['获取供应商报价'],memories:[{kind:'constraint',subject:'供应商区域',content:'只选择中国大陆供应商',confidence:100},{kind:'decision',subject:'首个市场',content:'首个测试市场为德国',confidence:95}]};
 let repo:Repository,root:string,server:Server,baseUrl:string;
 const received:any[]=[];
 const actor:User={id:randomUUID(),username:'test-admin',role:'admin',enabled:true};
 beforeAll(async()=>{
   repo=await createRepository();root=await mkdtemp(path.join(os.tmpdir(),'agentsale-automation-'));
-  server=createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{const input=JSON.parse(body);received.push(input);const name=input.response_format?.json_schema?.name;const content=name==='connection_check'?{ready:true}:name==='supplier_research'?report:name==='commerce_agent_intent'?{action:'chat',value:'你好，我可以和你一起梳理商品、市场和自动化任务。',explanation:'普通问候'}:copy;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture-http-model',choices:[{finish_reason:'stop',message:{content:JSON.stringify(content)}}],usage:{prompt_tokens:30,completion_tokens:100}}));});});
+  server=createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{const input=JSON.parse(body);received.push(input);const name=input.response_format?.json_schema?.name;const content=name==='connection_check'?{ready:true}:name==='supplier_research'?report:name==='agent_context_compaction'?compactedContext:name==='commerce_agent_intent'?{action:'chat',value:'你好，我可以和你一起梳理商品、市场和自动化任务。',explanation:'普通问候'}:copy;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture-http-model',choices:[{finish_reason:'stop',message:{content:JSON.stringify(content)}}],usage:{prompt_tokens:30,completion_tokens:100}}));});});
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));baseUrl='http://127.0.0.1:'+(server.address() as {port:number}).port+'/v1';
 });
 afterAll(async()=>{await repo.close();await new Promise<void>(resolve=>server.close(()=>resolve()));if(path.basename(root).startsWith('agentsale-automation-')&&path.dirname(root)===os.tmpdir())await rm(root,{recursive:true,force:true});});
@@ -47,6 +48,22 @@ describe('Agent 对话与命令',()=>{
   it('常见自然语言无需模型即可映射为安全动作',()=>{expect(inferAgentIntent('现在执行一轮')).toMatchObject({action:'run'});expect(inferAgentIntent('帮我寻找支持单件代发的供应商')).toMatchObject({action:'discover'});expect(inferAgentIntent('展示一下当前状态')).toMatchObject({action:'status'});});
   it('本机执行身份可启动 Agent，并在后续周期继续运行',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};const started=await e.agentChat('/start',local);expect(started.snapshot.state.owner).toMatchObject({id:local.id});const resumed=await e.runAgentCycle(undefined,true);expect(resumed.state.lastError).not.toContain('OWNER_UNAVAILABLE');});
   it('普通自然语言由模型生成对话回复，不退化为命令列表',async()=>{const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};const result=await e.agentChat('你好，先介绍一下你能怎样帮我',local);expect(result.reply).toContain('商品、市场和自动化任务');expect(result.reply).not.toContain('/status');});
+  it('每次模型对话使用可审计上下文，并在超阈值后形成版本化摘要和长期记忆',async()=>{
+    const e=await engine(randomUUID()),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true},start=received.length;
+    for(let index=0;index<13;index++)await e.agentChat(index===0?'请记住：首个市场选择德国，合作方必须位于中国大陆并支持单件代发。':`继续讨论第 ${index+1} 个经营问题。`,local);
+    const calls=received.slice(start).filter(input=>input.response_format?.json_schema?.name==='commerce_agent_intent');
+    expect(calls).toHaveLength(13);expect(calls[1].messages.at(-1).content).toContain('首个市场选择德国');
+    const snapshot=await e.context.snapshot();
+    expect(snapshot.summary).toMatchObject({version:1,document:{objective:compactedContext.objective}});expect(snapshot.memories).toEqual(expect.arrayContaining([expect.objectContaining({kind:'constraint',subject:'供应商区域'})]));
+    expect(snapshot.runs).toHaveLength(13);expect(snapshot.runs.every((run:any)=>run.status==='completed'&&Number(run.estimated_tokens)<=12000)).toBe(true);
+  });
+  it('升级前的大量历史消息不会遮住本次最新输入',async()=>{
+    const workspace=randomUUID(),e=await engine(workspace),local:User={id:'00000000-0000-4000-8000-000000000045',username:'本机用户',role:'operator',enabled:true};
+    await repo.scoped(workspace,async tx=>{for(let index=0;index<130;index++)await tx.execute(sql`INSERT INTO commerce_agent_messages(id,workspace_id,role,kind,content,payload,created_at) VALUES(${randomUUID()},${workspace},'user','message',${`旧消息 ${index+1}`},'{}'::jsonb,${new Date(Date.now()+index).toISOString()})`);});
+    const start=received.length;await e.agentChat('这是最新一轮提问，回答时不要遗漏。',local);
+    const call=received.slice(start).find(input=>input.response_format?.json_schema?.name==='commerce_agent_intent');
+    expect(call.messages.at(-1).content).toContain('这是最新一轮提问');
+  });
 });
 describe('渠道连接器协议',()=>{
   it('按官方规则签名 TikTok、Temu 并验证 TikTok Webhook',()=>{
