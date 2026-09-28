@@ -132,6 +132,10 @@ h3{font-size:15px;line-height:1.5}
 .admin-panel .settings-section{max-width:none}
 .admin-panel h2,.billing-admin h2{font-weight:660}
 .admin-panel .sectionrow+.muted{margin-top:5px}
+.model-preset-row{display:flex;align-items:flex-end;gap:14px 18px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--subtle)}
+.model-preset-field{width:min(100%,280px);flex:none}
+.model-preset-help{flex:1;min-width:min(100%,230px);padding-bottom:7px;color:var(--muted);font-size:11px;line-height:1.6}
+.model-local-field{align-self:end}
 .admin-panel .connector-block{padding:17px 0;border-top:1px solid var(--line)}
 .admin-panel .connector-block:first-of-type{margin-top:18px}
 .settings-row{display:flex;justify-content:space-between;gap:20px;padding:13px 0;border-bottom:1px solid var(--line);font-size:12px}
