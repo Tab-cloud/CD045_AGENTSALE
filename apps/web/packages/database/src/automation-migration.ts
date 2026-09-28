@@ -26,6 +26,14 @@ CREATE TABLE IF NOT EXISTS wechat_login_pending (
  id_hash text PRIMARY KEY, workspace_id text NOT NULL, app_id text NOT NULL, openid text NOT NULL,
  verified_phone text, expires_at text NOT NULL
 );
+CREATE TABLE IF NOT EXISTS desktop_login_requests (
+ id_hash text PRIMARY KEY, workspace_id text NOT NULL, secret_hash text NOT NULL,
+ display_code_hash text NOT NULL, requester_hash text NOT NULL, user_id uuid REFERENCES app_users(id),
+ attempts integer NOT NULL DEFAULT 0, consumed boolean NOT NULL DEFAULT false,
+ expires_at text NOT NULL, created_at text NOT NULL
+);
+ALTER TABLE desktop_login_requests ADD COLUMN IF NOT EXISTS consumed boolean NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS desktop_login_requests_rate ON desktop_login_requests(workspace_id,requester_hash,created_at DESC);
 CREATE TABLE IF NOT EXISTS automation_jobs (
  id uuid PRIMARY KEY, workspace_id text NOT NULL, state text NOT NULL, document jsonb NOT NULL, created_at text NOT NULL
 );
@@ -124,7 +132,7 @@ CREATE TABLE IF NOT EXISTS commerce_records (
  UNIQUE(workspace_id,connector,record_type,external_id)
 );
 CREATE INDEX IF NOT EXISTS commerce_records_recent ON commerce_records(workspace_id,record_type,observed_at DESC);
-${['app_users','app_sessions','phone_challenges','wechat_oauth_states','wechat_login_pending','automation_jobs','media_assets','automation_spend','market_signals','commerce_agent_state','agent_conversations','commerce_agent_messages','agent_context_summaries','agent_memories','agent_context_runs','agent_conversation_context_summaries','agent_conversation_memories','agent_conversation_context_runs','connector_state','commerce_orders','connector_events','connector_oauth_states','commerce_records'].map(table=>`
+${['app_users','app_sessions','phone_challenges','wechat_oauth_states','wechat_login_pending','desktop_login_requests','automation_jobs','media_assets','automation_spend','market_signals','commerce_agent_state','agent_conversations','commerce_agent_messages','agent_context_summaries','agent_memories','agent_context_runs','agent_conversation_context_summaries','agent_conversation_memories','agent_conversation_context_runs','connector_state','commerce_orders','connector_events','connector_oauth_states','commerce_records'].map(table=>`
 GRANT SELECT,INSERT,UPDATE,DELETE ON ${table} TO agentsale_local;
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;

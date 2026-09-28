@@ -1,2 +1,3 @@
 import {MemberPortal} from '../../components/member-portal';
-export default function Page(){return <MemberPortal/>;}
+import {DesktopLoginReturn} from '../../components/desktop-connect';
+export default function Page(){return <><DesktopLoginReturn/><MemberPortal/></>;}
