@@ -19,17 +19,16 @@ export const minimaxSchema=z.object({baseUrl:z.enum(['https://api.minimax.cn/v1'
 export const settingsSchema = z.object({
   baseUrl: z.string().url().max(500), model: text(100),
   localModel: z.boolean(), format: z.enum(['json_schema','json_object','prompt_json']),protocol:z.enum(['openai','minimax']).default('openai'),minimax:minimaxSchema.default(()=>minimaxSchema.parse({})),
-  tokenParameter: z.enum(['max_completion_tokens','max_tokens']), maxTokens: z.number().int().min(512).max(8192),
   callLimitCents: z.number().int().min(0).max(10000), dailyLimitCents: z.number().int().min(0).max(100000),
-  searchCallCents: z.number().int().min(1).max(1000), allowedDomains: z.array(text(253)).max(30),connectors:connectorSettingsSchema.default(()=>connectorSettingsSchema.parse({}))
+  allowedDomains: z.array(text(253)).max(30),connectors:connectorSettingsSchema.default(()=>connectorSettingsSchema.parse({}))
 }).strict();
 export type Settings = z.infer<typeof settingsSchema>;
-export type SecretSettings = Settings & { apiKey: string; searchKey: string; minimaxKey:string;connectorSecrets:ConnectorSecrets; verifiedAt: string | null; revision: string };
-export type PublicSettings = Settings & { hasApiKey: boolean; hasSearchKey: boolean;hasMinimaxKey:boolean;connectorSecretStatus:Record<ConnectorSecretKey,boolean>; verifiedAt: string | null; revision: string };
-export const defaults: Settings = { baseUrl:'https://api.openai.com/v1',model:'',localModel:false,format:'json_schema',protocol:'openai',minimax:minimaxSchema.parse({}),tokenParameter:'max_completion_tokens',maxTokens:4096,callLimitCents:0,dailyLimitCents:0,searchCallCents:1,allowedDomains:[],connectors:connectorSettingsSchema.parse({}) };
+export type SecretSettings = Settings & { apiKey: string; minimaxKey:string;connectorSecrets:ConnectorSecrets; verifiedAt: string | null; revision: string };
+export type PublicSettings = Settings & { hasApiKey: boolean;hasMinimaxKey:boolean;connectorSecretStatus:Record<ConnectorSecretKey,boolean>; verifiedAt: string | null; revision: string };
+export const defaults: Settings = { baseUrl:'https://api.openai.com/v1',model:'',localModel:false,format:'json_schema',protocol:'openai',minimax:minimaxSchema.parse({}),callLimitCents:0,dailyLimitCents:0,allowedDomains:[],connectors:connectorSettingsSchema.parse({}) };
 export type User = { id:string; username:string; role:'admin'|'operator'; enabled:boolean; phone?:string|null; wechatBound?:boolean };
 export type Source = { id:string; url:string; title:string; text:string; hash:string; fetchedAt:string; status:'fetched'|'imported'|'unavailable'; category?:'supplier'|'market'; error?:string };
-export type WebSearchHit = { url:string; title:string; description:string; source:'brave'|'duckduckgo_html'|'bing_rss' };
+export type WebSearchHit = { url:string; title:string; description:string; source:'duckduckgo_html'|'bing_rss' };
 export type ResearchToolName = 'web.search'|'web.fetch';
 export type ResearchToolRun = {
   id:string; iteration:number; tool:ResearchToolName; status:'succeeded'|'failed'|'rejected';

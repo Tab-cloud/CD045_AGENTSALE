@@ -15,14 +15,12 @@ const sections = [
   {id:'users',label:'用户管理',number:'02',title:'用户管理',description:'查看注册用户、账号绑定和会员权限。'},
   {id:'orders',label:'订阅账单',number:'03',title:'订阅账单',description:'查询会员订单、收款状态和交易记录。'},
   {id:'auth-services',label:'登录与短信',number:'04',title:'登录与短信',description:'配置手机号验证码与微信登录服务。'},
-  {id:'services',label:'模型与搜索',number:'05',title:'模型与搜索',description:'配置桌面端使用的平台模型和检索服务。'},
+  {id:'services',label:'模型接口',number:'05',title:'模型接口',description:'配置桌面端 Agent 使用的模型服务。'},
   {id:'creative',label:'图片与视频',number:'06',title:'图片与视频',description:'配置桌面端创作任务所使用的服务接口。'},
 ] as const;
 type SectionId = typeof sections[number]['id'];
 function currentSection():SectionId{
-  if(new URLSearchParams(window.location.search).has('oauth'))return 'services';
   const hash=window.location.hash.slice(1);
-  if(hash==='channels')return 'services';
   return sections.find(section=>section.id===hash)?.id||'overview';
 }
 

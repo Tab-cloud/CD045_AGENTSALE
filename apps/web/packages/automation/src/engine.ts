@@ -31,7 +31,7 @@ export function createAutomation(repo:Repository,workspace:string,root:string,ov
   const contextFor=(conversationId:string)=>{let value=contexts.get(conversationId);if(!value){value=createContextManager(repo,workspace,conversationId,summarizeContext);contexts.set(conversationId,value);}return value;};
   async function paid<T>(job:Job,service:'model'|'search'|'speech'|'video',fn:(settings:Awaited<ReturnType<typeof vault.get>>)=>Promise<T>):Promise<T>{
     const settings=await vault.get();if(service==='model')assertProvider(settings);else if(service==='speech'||service==='video')assertMinimax(settings,service);
-    const cents=service==='speech'?settings.minimax.speechLimitCents:service==='video'?settings.minimax.videoLimitCents:service==='search'?(settings.searchKey?settings.searchCallCents:0):settings.localModel?0:settings.callLimitCents;
+    const cents=service==='speech'?settings.minimax.speechLimitCents:service==='video'?settings.minimax.videoLimitCents:service==='search'||settings.localModel?0:settings.callLimitCents;
     const reserve=await store.reserve(job.id,cents,service,settings,job.input.budgetCents);
     try{const result=await fn(settings);await store.settle(reserve,'confirmed',(result as {usage?:unknown})?.usage||null);return result;}
     catch(e){await store.settle(reserve,'unknown',null);throw e;}

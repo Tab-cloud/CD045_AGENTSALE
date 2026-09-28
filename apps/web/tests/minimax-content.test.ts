@@ -23,7 +23,7 @@ let root:string,repo:Repository,server:Server,base:string,audio:Buffer,video:Buf
 const calls:{url:string;body:any;authorization?:string}[]=[];
 const actor:User={id:randomUUID(),username:'qa',role:'admin',enabled:true};
 const settings={...defaults,model:'MiniMax-M3',minimax:{...defaults.minimax,speechLimitCents:2,videoLimitCents:8},dailyLimitCents:100};
-const secret:SecretSettings={...settings,apiKey:'',searchKey:'',minimaxKey:'FIXTURE-ONLY-KEY',verifiedAt:null,revision:'fixture'};
+const secret:SecretSettings={...settings,apiKey:'',minimaxKey:'FIXTURE-ONLY-KEY',verifiedAt:null,revision:'fixture'};
 beforeAll(async()=>{
   root=await mkdtemp(path.join(os.tmpdir(),'agentsale-minimax-'));repo=await createRepository();
   await command('ffmpeg',['-v','error','-f','lavfi','-i','sine=frequency=440:duration=2','-y',path.join(root,'tone.mp3')]);audio=await readFile(path.join(root,'tone.mp3'));
@@ -40,7 +40,7 @@ beforeAll(async()=>{
 });
 afterAll(async()=>{await repo.close();await new Promise<void>(r=>server.close(()=>r()));if(path.dirname(root)===os.tmpdir()&&path.basename(root).startsWith('agentsale-minimax-'))await rm(root,{recursive:true,force:true});});
 const provider=createMinimax((url,options)=>requestBytes(base+new URL(url).pathname+new URL(url).search,{...options,local:true}));
-async function setup(budget=30){const w=randomUUID(),e=createAutomation(repo,w,path.join(root,w),{minimax:provider});await e.vault.save(settings,undefined,undefined,'FIXTURE-ONLY-KEY');const p=await repo.execute(w,{type:'product.create',name:'Synthetic fixture',sku:randomUUID(),supplier:'QA only',region:'China',market:'QA',description:'Synthetic fixture only',sourceUrl:'https://example.com',costs:defaultCosts},randomUUID());const png=await sharp({create:{width:500,height:700,channels:3,background:'#ccd4dc'}}).png().toBuffer();const asset=await e.upload(p.id,'fixture.png','Synthetic QA asset',png);const script={...fixture,listing:undefined};const j=await e.store.create({kind:'render',productId:p.id,expectedVersion:1,assetId:asset.id,script,voiceover:true,videoMode:'minimax',budgetCents:budget},actor,randomUUID());return {e,w,j,asset};}
+async function setup(budget=30){const w=randomUUID(),e=createAutomation(repo,w,path.join(root,w),{minimax:provider});await e.vault.save(settings,undefined,'FIXTURE-ONLY-KEY');const p=await repo.execute(w,{type:'product.create',name:'Synthetic fixture',sku:randomUUID(),supplier:'QA only',region:'China',market:'QA',description:'Synthetic fixture only',sourceUrl:'https://example.com',costs:defaultCosts},randomUUID());const png=await sharp({create:{width:500,height:700,channels:3,background:'#ccd4dc'}}).png().toBuffer();const asset=await e.upload(p.id,'fixture.png','Synthetic QA asset',png);const script={...fixture,listing:undefined};const j=await e.store.create({kind:'render',productId:p.id,expectedVersion:1,assetId:asset.id,script,voiceover:true,videoMode:'minimax',budgetCents:budget},actor,randomUUID());return {e,w,j,asset};}
 
 it('MiniMax 文本协议分离推理，不发送未验证支持的 JSON 格式参数',async()=>{const config={...secret,baseUrl:base+'/v1',localModel:true,model:'MiniMax-M3',format:'prompt_json' as const,protocol:'minimax' as const};const result=await modelJson(config,z.object({ready:z.literal(true)}).strict(),'check','Return ready',true);expect(result.data.ready).toBe(true);const req=calls.at(-1)!;expect(req.body.reasoning_split).toBe(true);expect(req.body.thinking.type).toBe('disabled');expect(req.body.response_format).toBeUndefined();expect(req.body.messages[1].content).toContain('Required JSON schema');});
 

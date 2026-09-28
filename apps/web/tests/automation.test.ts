@@ -12,7 +12,7 @@ import { createAuth } from '../packages/automation/src/auth';
 import { createAutomation } from '../packages/automation/src/engine';
 import { defaults,researchSchema,type Source,type Research,type Copy,type User,FlowError } from '../packages/automation/src/types';
 import { isPublicAddress,validUrl,robotsAllows,extractSource,requestBytes } from '../packages/automation/src/network';
-import { groundResearch,validateResearch,modelJson,marketing,parseBingRss,parseDuckDuckGoHtml } from '../packages/automation/src/providers';
+import { groundResearch,validateResearch,modelJson,marketing,parseBingRss,parseDuckDuckGoHtml,publicSearchUrls } from '../packages/automation/src/providers';
 import { createFlowStore } from '../packages/automation/src/storage';
 import { safeSettings } from '../packages/automation/src/vault';
 import { agentIntentSchema,inferAgentIntent,parseAgentSlash } from '../packages/automation/src/agent';
@@ -28,6 +28,16 @@ const cite=(quote:string)=>({sourceId:source.id,quote});
 const report:Research={summary:'基于测试来源选择供货方案',recommendation:'investigate',candidates:[{name:'Fixture Manufacturing',product:'Fixture desktop stand',sourceId:source.id,mainlandEvidence:cite('based in Shenzhen, China'),dropshipEvidence:cite('We offer single-unit dropshipping.'),markets:[{country:'Germany',shippingEvidence:cite('We ship directly to Germany.'),rationale:'来源明确列出目的国家'}],concerns:['样品与报价待核实']}],selectedIndex:0,market:'Germany',reasoning:'仅证明流程如何依据供货证据选择市场，不是实际供应商推荐',missing:['包装与实物验证'],inquiry:{subject:'代发合作询价',body:'请确认 MOQ、包装尺寸、德国运费、交期、售后与素材授权。'}};
 const copy:Copy=contentFixture;
 const compactedContext={objective:'在德国测试中国大陆工厂可单件代发的轻小商品',requirements:['供应商必须位于中国大陆','必须支持单件代发'],facts:[],decisions:['首个测试市场为德国'],openQuestions:['运费和交期尚未核实'],nextActions:['获取供应商报价'],memories:[{kind:'constraint',subject:'供应商区域',content:'只选择中国大陆供应商',confidence:100},{kind:'decision',subject:'首个市场',content:'首个测试市场为德国',confidence:95}]};
+it('公开检索按任务地区和语言设置搜索，不默认美国',()=>{
+  const german=publicSearchUrls('nachhaltige Produkte',{country:'DE',language:'de'});
+  expect(new URL(german.duck).searchParams.get('kl')).toBe('de-de');
+  expect(new URL(german.bing).searchParams.get('mkt')).toBe('de-DE');
+  const chinese=publicSearchUrls('中国供应商',{country:'CN',language:'zh'});
+  expect(new URL(chinese.duck).searchParams.get('kl')).toBe('cn-zh');
+  expect(new URL(publicSearchUrls('日本の市場',{country:'JP',language:'ja'}).duck).searchParams.get('kl')).toBe('jp-jp');
+  expect(new URL(publicSearchUrls('global market').duck).searchParams.get('kl')).toBe('wt-wt');
+  expect(()=>publicSearchUrls('query',{country:'usa'})).toThrow();
+});
 let repo:Repository,root:string,server:Server,baseUrl:string;
 const received:any[]=[];
 const actor:User={id:randomUUID(),username:'test-admin',role:'admin',enabled:true};
@@ -87,7 +97,7 @@ describe('渠道连接器协议',()=>{
     const raw=Buffer.from('{"tts_notification_id":"123"}'),signature=createHmac('sha256',secret).update('fixture-key').update(raw).digest('hex');expect(verifyTikTokWebhook(raw,signature,'fixture-key',secret)).toBe(true);expect(verifyTikTokWebhook(raw,signature+'0','fixture-key',secret)).toBe(false);
   });
   it('真实协议响应可验证连接、同步订单并幂等保存事件',async()=>{
-    const w=randomUUID(),e=await engine(w),p=await product(w),current=await e.vault.get(),{apiKey:_a,searchKey:_s,minimaxKey:_m,connectorSecrets:_c,verifiedAt:_v,revision:_r,...publicSettings}=current;await e.vault.save({...publicSettings,connectors:{...publicSettings.connectors,tiktokShop:{enabled:true,baseUrl:'https://open-api.tiktokglobalshop.com',appKey:'fixture-key',shopCipher:'ROW_fixture'}}},undefined,undefined,undefined,{tiktokShopAppSecret:'fixture-secret',tiktokShopAccessToken:'fixture-token'});
+    const w=randomUUID(),e=await engine(w),p=await product(w),current=await e.vault.get(),{apiKey:_a,minimaxKey:_m,connectorSecrets:_c,verifiedAt:_v,revision:_r,...publicSettings}=current;await e.vault.save({...publicSettings,connectors:{...publicSettings.connectors,tiktokShop:{enabled:true,baseUrl:'https://open-api.tiktokglobalshop.com',appKey:'fixture-key',shopCipher:'ROW_fixture'}}},undefined,undefined,{tiktokShopAppSecret:'fixture-secret',tiktokShopAccessToken:'fixture-token'});
     const mock=async(raw:string,options:any)=>{const url=new URL(raw);if(url.pathname==='/authorization/202309/shops')return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"shops":[]}}'),url:raw};if(url.pathname==='/product/202502/products/search')return {status:200,headers:{},body:Buffer.from(JSON.stringify({code:0,data:{products:[{id:'REMOTE-1',skus:[{seller_sku:p.sku}]}]}})),url:raw};if(url.pathname==='/analytics/202605/shop_products/performance')return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"products":[{"id":"REMOTE-1","total_performance":{"items_sold":12,"product_impressions":3400,"ctr":0.041}}]}}'),url:raw};if(url.pathname==='/finance/202309/statements')return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"statements":[{"id":"STATEMENT-1","statement_time":1696909648,"settlement_amount":"10.00","currency":"USD"}]}}'),url:raw};if(url.pathname==='/return_refund/202309/returns/search')return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"return_orders":[{"return_id":"RETURN-1","create_time":1696909648,"return_status":"RETURN_OR_REFUND_REQUEST_PENDING"}]}}'),url:raw};if(url.pathname==='/product/202309/products'){expect(JSON.parse(String(options.body))).toMatchObject({title:'Fixture listing',idempotency_key:'catalog-1'});return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"product_id":"REMOTE-2"}}'),url:raw};}expect(options.method).toBe('POST');return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"orders":[{"id":"ORDER-1","status":"AWAITING_SHIPMENT","update_time":1696909648,"payment":{"currency":"USD","total_amount":"19.99"}}]}}'),url:raw};};
     const connectors=createCommerceConnectors(repo,w,e.vault,mock as any);
     expect(JSON.stringify(safeSettings(await e.vault.get()))).not.toContain('fixture-secret');expect(await readFile(path.join(e.root,'private/providers.sealed'),'utf8')).not.toContain('fixture-token');
@@ -106,17 +116,17 @@ describe('渠道连接器协议',()=>{
     expect(await connectors.claimReceived('customer_bridge','case-1')).toMatchObject({claimed:false});
   });
   it('Bridge 使用鉴权和幂等键执行客服动作',async()=>{
-    const w=randomUUID(),e=await engine(w),current=await e.vault.get(),{apiKey:_a,searchKey:_s,minimaxKey:_m,connectorSecrets:_c,verifiedAt:_v,revision:_r,...publicSettings}=current;
-    await e.vault.save({...publicSettings,connectors:{...publicSettings.connectors,customerBridge:{enabled:true,autoExecute:true,baseUrl:'https://customer.example.com'}}},undefined,undefined,undefined,{customerBridgeToken:'bridge-secret'});
+    const w=randomUUID(),e=await engine(w),current=await e.vault.get(),{apiKey:_a,minimaxKey:_m,connectorSecrets:_c,verifiedAt:_v,revision:_r,...publicSettings}=current;
+    await e.vault.save({...publicSettings,connectors:{...publicSettings.connectors,customerBridge:{enabled:true,autoExecute:true,baseUrl:'https://customer.example.com'}}},undefined,undefined,{customerBridgeToken:'bridge-secret'});
     const calls:any[]=[];const mock=async(raw:string,options:any)=>{calls.push({raw,options});return {status:200,headers:{},body:Buffer.from('{"accepted":true}'),url:raw};},connectors=createCommerceConnectors(repo,w,e.vault,mock as any);
     expect((await connectors.verify('customer_bridge')).verified).toBe(true);expect(await connectors.customerAction({caseId:'CASE-1'},'customer:CASE-1')).toMatchObject({accepted:true});expect(calls[1].raw).toBe('https://customer.example.com/v1/cases/actions');expect(calls[1].options.headers).toMatchObject({Authorization:'Bearer bridge-secret','Idempotency-Key':'customer:CASE-1','X-AgentSale-Protocol':'2026-09-06'});
   });
   it('TikTok Shop OAuth 使用一次性 state，保存店铺并刷新 Token',async()=>{
-    const w=randomUUID(),e=await engine(w),current=await e.vault.get(),{apiKey:_a,searchKey:_s,minimaxKey:_m,connectorSecrets:_c,verifiedAt:_v,revision:_r,...publicSettings}=current;await e.vault.save({...publicSettings,connectors:{...publicSettings.connectors,tiktokShop:{enabled:true,baseUrl:'https://open-api.tiktokglobalshop.com',appKey:'oauth-key',serviceId:'service-1',authRegion:'us',shopCipher:''}}},undefined,undefined,undefined,{tiktokShopAppSecret:'oauth-secret'});
+    const w=randomUUID(),e=await engine(w),current=await e.vault.get(),{apiKey:_a,minimaxKey:_m,connectorSecrets:_c,verifiedAt:_v,revision:_r,...publicSettings}=current;await e.vault.save({...publicSettings,connectors:{...publicSettings.connectors,tiktokShop:{enabled:true,baseUrl:'https://open-api.tiktokglobalshop.com',appKey:'oauth-key',serviceId:'service-1',authRegion:'us',shopCipher:''}}},undefined,undefined,{tiktokShopAppSecret:'oauth-secret'});
     let refresh=false;const mock=async(raw:string)=>{const url=new URL(raw);if(url.pathname==='/api/v2/token/get')return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"access_token":"access-1","refresh_token":"refresh-1","access_token_expire_in":1900000000,"refresh_token_expire_in":2000000000,"user_type":0,"seller_name":"Fixture Seller","granted_scopes":["seller.order.info"]}}'),url:raw};if(url.pathname==='/api/v2/token/refresh'){refresh=true;return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"access_token":"access-2","refresh_token":"refresh-2","access_token_expire_in":1900001000,"refresh_token_expire_in":2000001000}}'),url:raw};}return {status:200,headers:{},body:Buffer.from('{"code":0,"data":{"shops":[{"cipher":"SHOP-CIPHER","name":"Fixture Shop"}]}}'),url:raw};},connectors=createCommerceConnectors(repo,w,e.vault,mock as any),authorization=await connectors.beginAuthorization('tiktok_shop'),authUrl=new URL(authorization.url),state=authUrl.searchParams.get('state')!;expect(authUrl.hostname).toBe('services.us.tiktokshop.com');expect(authUrl.searchParams.get('service_id')).toBe('service-1');expect(await connectors.completeAuthorization('tiktok_shop',state,'one-time-code')).toMatchObject({authorized:true,shops:1});await expect(connectors.completeAuthorization('tiktok_shop',state,'one-time-code')).rejects.toMatchObject({code:'OAUTH_STATE_INVALID'});expect(await e.vault.get()).toMatchObject({connectors:{tiktokShop:{shopCipher:'SHOP-CIPHER'}},connectorSecrets:{tiktokShopAccessToken:'access-1',tiktokShopRefreshToken:'refresh-1'}});expect(await connectors.refreshTikTokToken(true)).toBe(true);expect(refresh).toBe(true);expect((await e.vault.get()).connectorSecrets.tiktokShopAccessToken).toBe('access-2');
   });
   it('Temu US 回调授权交换 Token 并保存实际权限',async()=>{
-    const w=randomUUID(),e=await engine(w),current=await e.vault.get(),{apiKey:_a,searchKey:_s,minimaxKey:_m,connectorSecrets:_c,verifiedAt:_v,revision:_r,...publicSettings}=current;await e.vault.save({...publicSettings,connectors:{...publicSettings.connectors,temu:{enabled:true,baseUrl:'https://openapi-b-us.temu.com/openapi/router',appKey:'temu-key'}}},undefined,undefined,undefined,{temuAppSecret:'temu-secret'});const mock=async(raw:string,options:any)=>({status:200,headers:{},body:Buffer.from('{"success":true,"result":{"accessToken":"temu-access","mallId":42,"apiScopeList":["bg.order.list.v2.get"],"appSubscribeEventCodeList":["bg_order_status_change_event"],"expiredTime":1900000000}}'),url:raw}),connectors=createCommerceConnectors(repo,w,e.vault,mock as any),authorization=await connectors.beginAuthorization('temu'),url=new URL(authorization.url),state=url.searchParams.get('state')!;expect(url.hostname).toBe('seller.temu.com');expect(url.searchParams.get('redirect_uri')).toContain('/api/v1/oauth/temu/callback');expect(await connectors.completeAuthorization('temu',state,'temu-code')).toMatchObject({authorized:true,mallId:42});expect((await e.vault.get()).connectorSecrets.temuAccessToken).toBe('temu-access');expect(await connectors.records('authorization')).toMatchObject([{connector:'temu',document:{apiScopeList:['bg.order.list.v2.get']}}]);
+    const w=randomUUID(),e=await engine(w),current=await e.vault.get(),{apiKey:_a,minimaxKey:_m,connectorSecrets:_c,verifiedAt:_v,revision:_r,...publicSettings}=current;await e.vault.save({...publicSettings,connectors:{...publicSettings.connectors,temu:{enabled:true,baseUrl:'https://openapi-b-us.temu.com/openapi/router',appKey:'temu-key'}}},undefined,undefined,{temuAppSecret:'temu-secret'});const mock=async(raw:string,options:any)=>({status:200,headers:{},body:Buffer.from('{"success":true,"result":{"accessToken":"temu-access","mallId":42,"apiScopeList":["bg.order.list.v2.get"],"appSubscribeEventCodeList":["bg_order_status_change_event"],"expiredTime":1900000000}}'),url:raw}),connectors=createCommerceConnectors(repo,w,e.vault,mock as any),authorization=await connectors.beginAuthorization('temu'),url=new URL(authorization.url),state=url.searchParams.get('state')!;expect(url.hostname).toBe('seller.temu.com');expect(url.searchParams.get('redirect_uri')).toContain('/api/v1/oauth/temu/callback');expect(await connectors.completeAuthorization('temu',state,'temu-code')).toMatchObject({authorized:true,mallId:42});expect((await e.vault.get()).connectorSecrets.temuAccessToken).toBe('temu-access');expect(await connectors.records('authorization')).toMatchObject([{connector:'temu',document:{apiScopeList:['bg.order.list.v2.get']}}]);
   });
 });
 
@@ -172,9 +182,15 @@ describe('真实协议与持久流程',()=>{
     await expect(marketing({...current,kind:'launch'},await e.vault.get())).rejects.toMatchObject({code:'FULFILLMENT_EVIDENCE_REQUIRED'});
   });
   it('实际 HTTP 请求模型协议、服务验证及密钥隐藏，不使用应用内模板代替模型',async()=>{
-    const e=await engine();expect((await e.vault.get()).verifiedAt).toBeTruthy();const request=received.at(-1);expect(request.messages[0].content).toContain('untrusted DATA');expect(request.response_format.json_schema.strict).toBe(true);
-    const settings=await e.vault.get();expect(safeSettings({...settings,apiKey:'SECRET',searchKey:'SEARCH_SECRET'})).not.toHaveProperty('apiKey');
-    await e.vault.save({...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100},'TOP-SECRET','SEARCH-SECRET');const sealed=await readFile(path.join(e.root,'private/providers.sealed'),'utf8');expect(sealed).not.toContain('TOP-SECRET');expect((await e.vault.get()).verifiedAt).toBeNull();
+    const e=await engine();expect((await e.vault.get()).verifiedAt).toBeTruthy();const request=received.at(-1);expect(request.messages[0].content).toContain('untrusted DATA');expect(request.response_format.json_schema.strict).toBe(true);expect(request).not.toHaveProperty('max_completion_tokens');expect(request).not.toHaveProperty('max_tokens');
+    const settings=await e.vault.get();expect(safeSettings({...settings,apiKey:'SECRET'})).not.toHaveProperty('apiKey');
+    await e.vault.save({...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100},'TOP-SECRET');const sealed=await readFile(path.join(e.root,'private/providers.sealed'),'utf8');expect(sealed).not.toContain('TOP-SECRET');expect((await e.vault.get()).verifiedAt).toBeNull();
+  });
+  it('拒绝已删除的输出上限和搜索费用配置字段',async()=>{
+    const e=await engine();
+    await expect(e.vault.save({...defaults,maxTokens:4096})).rejects.toMatchObject({code:'CONFIG_INVALID'});
+    await expect(e.vault.save({...defaults,searchCallCents:1})).rejects.toMatchObject({code:'CONFIG_INVALID'});
+    expect(safeSettings(await e.vault.get())).not.toHaveProperty('hasSearchKey');
   });
   it('根据供应商配送证据自动选国家并建立候选，未预填国家',async()=>{
     const w=randomUUID(),e=createAutomation(repo,w,path.join(root,w),{fetchSource:async()=>source,search:async()=>[{url:source.url,title:'Public market fixture',description:'price and delivery observations',source:'bing_rss'}]});await e.vault.save({...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100});await e.verify();const job=await e.store.create({kind:'discovery',urls:[source.url],budgetCents:0},actor,randomUUID());
@@ -184,24 +200,23 @@ describe('真实协议与持久流程',()=>{
     expect(result.artifacts.some(a=>a.name==='supplier-inquiry.txt')).toBe(true);expect(await e.tick()).toBe(false);
   });
   it('调研 Agent 可自主搜索、读取网页并保存每次工具调用轨迹',async()=>{
-    const w=randomUUID(),e=createAutomation(repo,w,path.join(root,w),{fetchSource:async()=>source,search:async()=>[{url:source.url,title:source.title,description:'China supplier with dropshipping to Germany',source:'brave'}]});
-    await e.vault.save({...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100},undefined,'FIXTURE-SEARCH-KEY');await e.verify();
+    const w=randomUUID(),e=createAutomation(repo,w,path.join(root,w),{fetchSource:async()=>source,search:async()=>[{url:source.url,title:source.title,description:'China supplier with dropshipping to Germany',source:'duckduckgo_html'}]});
+    await e.vault.save({...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100});await e.verify();
     const job=await e.store.create({kind:'discovery',urls:[],budgetCents:10},actor,randomUUID());expect(await e.tick()).toBe(true);
     const result=await e.store.get(job.id);expect(result.sources).toMatchObject([{id:source.id,status:'fetched'}]);expect(result.toolRuns?.map(run=>[run.tool,run.status])).toEqual([['web.search','succeeded'],['web.fetch','succeeded']]);expect(result.researchPlans?.at(-1)).toMatchObject({complete:true});expect(result.researchGaps).toContain('报价与样品待线下核验');
     expect(result.activity?.map(item=>item.title)).toEqual(expect.arrayContaining(['开始执行：寻找供货来源','正在规划第 1 轮调研','正在搜索公开网页','网页搜索完成','网页读取完成','寻找供货来源已完成']));
   });
   it('配置串行保存，旧连接验证不能覆盖新配置；切换端点清除原模型密钥',async()=>{
-    const e=await engine(),settings={...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100};await e.vault.save(settings,'OLD-ENDPOINT-KEY','SEARCH-KEY');const before=await e.vault.get();
+    const e=await engine(),settings={...defaults,baseUrl,model:'fixture-http-model',localModel:true,dailyLimitCents:100};await e.vault.save(settings,'OLD-ENDPOINT-KEY');const before=await e.vault.get();
     const results=await Promise.allSettled([e.vault.save({...settings,model:'new-model'}),e.vault.verified(before.revision)]);
     expect(results[0].status).toBe('fulfilled');expect(results[1]).toMatchObject({status:'rejected',reason:{code:'CONFIG_CHANGED'}});
     expect(await e.vault.get()).toMatchObject({model:'new-model',apiKey:'OLD-ENDPOINT-KEY',verifiedAt:null});
-    await expect(e.vault.save({...settings,model:'stale-admin-edit'},undefined,undefined,undefined,undefined,false,before.revision)).rejects.toMatchObject({code:'CONFIG_CHANGED',status:409});
+    await expect(e.vault.save({...settings,model:'stale-admin-edit'},undefined,undefined,undefined,false,before.revision)).rejects.toMatchObject({code:'CONFIG_CHANGED',status:409});
     expect((await e.vault.get()).model).toBe('new-model');
-    await e.vault.save({...settings,baseUrl:'http://127.0.0.1:11434/v1'});expect(await e.vault.get()).toMatchObject({apiKey:'',searchKey:'SEARCH-KEY'});
-    await e.vault.save(settings,undefined,'');expect(safeSettings(await e.vault.get()).hasSearchKey).toBe(false);
+    await e.vault.save({...settings,baseUrl:'http://127.0.0.1:11434/v1'});expect(await e.vault.get()).toMatchObject({apiKey:''});
     const mistakenMiniMax={...defaults,baseUrl:'https://api.openai.com/v1',model:'minimax-m3',protocol:'openai' as const,callLimitCents:25,dailyLimitCents:200};
     await e.vault.save(mistakenMiniMax,'MINIMAX-ENDPOINT-KEY');
-    await e.vault.save({...mistakenMiniMax,baseUrl:'https://api.minimaxi.com/v1',model:'MiniMax-M3',protocol:'minimax',format:'prompt_json'},undefined,undefined,undefined,undefined,true);
+    await e.vault.save({...mistakenMiniMax,baseUrl:'https://api.minimaxi.com/v1',model:'MiniMax-M3',protocol:'minimax',format:'prompt_json'},undefined,undefined,undefined,true);
     expect(await e.vault.get()).toMatchObject({apiKey:'MINIMAX-ENDPOINT-KEY',baseUrl:'https://api.minimaxi.com/v1',protocol:'minimax'});
   });
   it('错误标识可跨服务路由模块读取，未知错误不伪装业务状态',()=>{
