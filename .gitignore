@@ -1,4 +1,5 @@
 node_modules/
+.DS_Store
 .next/
 .local/
 coverage/
@@ -11,3 +12,16 @@ test-results/
 *.local.*
 *.tmp
 *.bak
+
+# Rust and desktop build outputs
+/target/
+apps/agent/desktop/dist/
+apps/web/admin-console/dist/
+apps/agent/desktop/src-tauri/gen/
+
+# The Git remote is the Web service deployment repository.
+# Keep the Tauri/Rust application and its root-only build files local.
+/apps/agent/
+/Cargo.toml
+/Cargo.lock
+/assets/

@@ -1,0 +1,22 @@
+diff --git a/package.json b/package.json
+index cdfdd36b67dec2e89ebaa81a0d1ab7052ed0da47..d83b9e339cc07cea4be41a66f6acf7b22253062d 100644
+--- a/package.json
++++ b/package.json
+@@ -18,7 +18,6 @@
+   },
+   "dependencies": {
+     "@xmldom/xmldom": "^0.8.6",
+-    "argparse": "~1.0.3",
+     "base64-js": "^1.5.1",
+     "bluebird": "~3.4.0",
+     "dingbat-to-unicode": "^1.0.1",
+@@ -44,9 +43,6 @@
+     "./lib/unzip.js": "./browser/unzip.js",
+     "./lib/docx/files.js": "./browser/docx/files.js"
+   },
+-  "bin": {
+-    "mammoth": "bin/mammoth"
+-  },
+   "scripts": {
+     "pretest": "eslint lib test",
+     "test": "mocha 'test/**/*.tests.js'",

@@ -1,14 +1,30 @@
 {
-  "name": "agentsale", "version": "0.1.0", "private": true, "type": "module",
-  "packageManager": "pnpm@11.19.0", "engines": { "node": ">=24 <25" },
-  "scripts": {
-    "dev": "node scripts/run-portals.mjs dev",
-    "start": "node scripts/run-portals.mjs start",
-    "build": "node scripts/run-portals.mjs build",
-    "dev:operator": "node scripts/run-console.mjs dev",
-    "start:operator": "node scripts/run-console.mjs start",
-    "typecheck": "pnpm --filter @agentsale/console typecheck && pnpm --filter @agentsale/admin-console typecheck",
-    "test": "vitest run", "check": "pnpm typecheck && pnpm test && pnpm build"
+  "name": "agentsale",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24 <25"
   },
-  "devDependencies": { "@types/node": "^24.0.0", "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0", "typescript": "5.9.3", "vitest": "5.0.0" }
+  "scripts": {
+    "dev": "node apps/web/scripts/run-portals.mjs dev",
+    "start": "node apps/web/scripts/run-portals.mjs start",
+    "build": "node apps/web/scripts/run-portals.mjs build",
+    "dev:operator": "node apps/web/scripts/run-console.mjs dev",
+    "start:operator": "node apps/web/scripts/run-console.mjs start",
+    "typecheck": "pnpm --filter @agentsale/console typecheck && pnpm --filter @agentsale/admin-console typecheck",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "dev:desktop": "pnpm --filter @agentsale/desktop desktop:dev",
+    "build:desktop": "pnpm --filter @agentsale/desktop desktop:build",
+    "check:desktop": "pnpm --filter @agentsale/desktop build && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
 }
