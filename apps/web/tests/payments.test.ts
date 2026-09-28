@@ -1,9 +1,11 @@
-import {it,expect,afterEach} from 'vitest';
+import {it,expect,afterEach,vi} from 'vitest';
+import {AlipaySdk} from 'alipay-sdk';
 import {generateKeyPairSync,sign,createCipheriv,randomBytes} from 'node:crypto';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createPayments,verifyWechat} from '../packages/automation/src/payment';
+import type {requestBytes} from '../packages/automation/src/network';
 import type {Order} from '../packages/automation/src/membership';
 const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
 const {privateKey:alipayResponsePrivateKey,publicKey:alipayPublicKey}=generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
@@ -59,6 +61,37 @@ it('creates signed PC and mobile Alipay website checkout links with server-owned
    expect(biz.quit_url).toBe(device==='mobile'?'https://members.example.com/?payment=return&orderId='+order.id:undefined);
    expect(checkout.url).not.toContain(privateKey);
  }
+});
+it('closes a WeChat transaction only after a signed 204 response',async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'lingfeng-payment-'));dirs.push(root);
+ const calls:string[]=[];let valid=true;
+ const transport:typeof requestBytes=async(url,options)=>{calls.push(url);expect(options.method).toBe('POST');expect(JSON.parse(String(options.body))).toEqual({mchid:wx.merchantId});return {status:204,headers:Object.fromEntries(signed(valid?'':'tampered').entries()),body:Buffer.alloc(0),url};};
+ const payments=createPayments(root,transport);
+ await payments.configure({publicUrl:'https://members.example.com',wechat:wx,alipay:{...ali,enabled:false}});
+ const order:Order={id:'b'.repeat(32),userId:'user',channel:'wechat',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,search:10,image:1,video:1}}};
+ expect(await payments.close(order)).toBeNull();
+ expect(calls[0]).toBe('https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/'+order.id+'/close');
+ valid=false;
+ await expect(payments.close(order)).rejects.toThrow();
+});
+it('reports a paid Alipay transaction instead of closing it, and handles an uncreated trade',async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'lingfeng-payment-'));dirs.push(root);
+ const payments=createPayments(root);
+ await payments.configure({publicUrl:'https://members.example.com',wechat:{...wx,enabled:false},alipay:ali});
+ const order:Order={id:'c'.repeat(32),userId:'user',channel:'alipay',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,search:10,image:1,video:1}}};
+ let uncreated=false,tradeStatus='TRADE_SUCCESS';
+ const exec=vi.spyOn(AlipaySdk.prototype,'exec').mockImplementation(async method=>{
+   if(method==='alipay.trade.close')return uncreated?{code:'40004',subCode:'ACQ.TRADE_NOT_EXIST'} as never:{code:'40004',subCode:'ACQ.TRADE_STATUS_ERROR'} as never;
+   if(method==='alipay.trade.query')return {code:'10000',outTradeNo:order.id,sellerId:ali.merchantId,tradeStatus,totalAmount:'99.00',tradeNo:'verified-payment'} as never;
+   throw new Error('Unexpected provider method');
+ });
+ try{
+   expect(await payments.close(order)).toEqual({cents:9900,transactionId:'verified-payment'});
+   tradeStatus='TRADE_CLOSED';
+   expect(await payments.close(order)).toBeNull();
+   uncreated=true;
+   expect(await payments.close(order)).toBeNull();
+ }finally{exec.mockRestore();}
 });
 it('rejects forged, old and unknown-key WeChat notifications',()=>{const body='{"test":true}',headers=signed(body);expect(()=>verifyWechat(wx,headers,body)).not.toThrow();expect(()=>verifyWechat(wx,headers,body+' ')).toThrow();expect(()=>verifyWechat(wx,signed(body,'1'),body)).toThrow();headers.set('wechatpay-serial','unknown');expect(()=>verifyWechat(wx,headers,body)).toThrow();});
 it('requires the payment callback to match the deployed member origin',async()=>{const root=await mkdtemp(path.join(tmpdir(),'lingfeng-payment-'));dirs.push(root);const old=process.env.LINGFENG_PUBLIC_URL;process.env.LINGFENG_PUBLIC_URL='https://members.example.com';try{await expect(createPayments(root).configure({publicUrl:'https://other.example.com',wechat:wx,alipay:ali})).rejects.toThrow('会员站点');}finally{if(old===undefined)delete process.env.LINGFENG_PUBLIC_URL;else process.env.LINGFENG_PUBLIC_URL=old;}});

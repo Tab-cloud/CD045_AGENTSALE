@@ -1,6 +1,32 @@
 'use client';
 import {useEffect,useState,type FormEvent} from 'react';
 import {platformRequest} from '../../console/components/platform-account';
-type Order={id:string;username:string;phone:string|null;plan:{name:string;priceCents:number};channel:'wechat'|'alipay';status:'paid'|'pending';createdAt:string;paidAt?:string;transactionId?:string};
+
+type Order={id:string;username:string;phone:string|null;plan:{name:string;priceCents:number};channel:'wechat'|'alipay';status:'paid'|'pending'|'closed';createdAt:string;paidAt?:string;closedAt?:string;transactionId?:string};
 type Page={page:number;pageSize:number;total:number;orders:Order[]};
-export function OrderLedger(){const [query,setQuery]=useState(''),[search,setSearch]=useState(''),[status,setStatus]=useState<'all'|'paid'|'pending'>('all'),[page,setPage]=useState(1),[data,setData]=useState<Page|null>(null),[error,setError]=useState('');useEffect(()=>{void platformRequest(`membership-admin?scope=orders&page=${page}&q=${encodeURIComponent(search)}&status=${status}`).then(value=>{setData(value as Page);setError('');}).catch(reason=>setError(reason instanceof Error?reason.message:'账单加载失败'));},[page,search,status]);function submit(event:FormEvent){event.preventDefault();setPage(1);setSearch(query.trim());}const lastPage=Math.max(1,Math.ceil((data?.total||0)/(data?.pageSize||20)));return <section id="orders" className="billing-admin"><h2>订阅账单</h2><p>这里展示真实的会员订单和支付状态。只有经过服务端核验的订单才标记为已支付。</p><form className="member-search" onSubmit={submit}><label>搜索订单、账号或手机号<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="订单号 / 用户 / 手机号" maxLength={100}/></label><label>支付状态<select value={status} onChange={event=>{setPage(1);setStatus(event.target.value as 'all'|'paid'|'pending');}}><option value="all">全部</option><option value="paid">已支付</option><option value="pending">待支付</option></select></label><button type="submit">搜索</button></form>{error&&<p className="account-error" role="alert">{error}</p>}<p>共 {data?.total||0} 笔订单 · 第 {page} / {lastPage} 页</p><div className="table-wrap"><table><thead><tr><th>订单号 / 用户</th><th>套餐</th><th>金额</th><th>渠道</th><th>状态</th><th>交易流水</th><th>创建 / 到账</th></tr></thead><tbody>{data?.orders.map(order=><tr key={order.id}><td><strong>{order.id}</strong><br/>{order.username}{order.phone&&` · ${order.phone}`}</td><td>{order.plan.name}</td><td>¥{(order.plan.priceCents/100).toFixed(2)}</td><td>{order.channel==='wechat'?'微信':'支付宝'}</td><td>{order.status==='paid'?'已支付':'待支付'}</td><td>{order.transactionId||'—'}</td><td>{new Date(order.createdAt).toLocaleString('zh-CN')}{order.paidAt&&<><br/>到账：{new Date(order.paidAt).toLocaleString('zh-CN')}</>}</td></tr>)}</tbody></table></div>{data?.orders.length===0&&<p>没有匹配的订单。</p>}<div className="member-pages"><button type="button" disabled={page<=1} onClick={()=>setPage(page-1)}>上一页</button><button type="button" disabled={page>=lastPage} onClick={()=>setPage(page+1)}>下一页</button></div></section>;}
+type Status='all'|'paid'|'pending'|'closed';
+
+export function OrderLedger(){
+  const [query,setQuery]=useState(''),[search,setSearch]=useState(''),[status,setStatus]=useState<Status>('all'),[page,setPage]=useState(1),[data,setData]=useState<Page|null>(null),[error,setError]=useState('');
+  useEffect(()=>{void platformRequest(`membership-admin?scope=orders&page=${page}&q=${encodeURIComponent(search)}&status=${status}`).then(value=>{setData(value as Page);setError('');}).catch(reason=>setError(reason instanceof Error?reason.message:'账单加载失败'));},[page,search,status]);
+  function submit(event:FormEvent){event.preventDefault();setPage(1);setSearch(query.trim());}
+  const lastPage=Math.max(1,Math.ceil((data?.total||0)/(data?.pageSize||20)));
+  return <section id="orders" className="billing-admin">
+    <h2>订阅账单</h2><p>这里展示真实的会员订单和支付状态。只有经过服务端核验的订单才标记为已支付。</p>
+    <form className="member-search" onSubmit={submit}>
+      <label>搜索订单、账号或手机号<input value={query} onChange={event=>setQuery(event.target.value)} placeholder="订单号 / 用户 / 手机号" maxLength={100}/></label>
+      <label>支付状态<select value={status} onChange={event=>{setPage(1);setStatus(event.target.value as Status);}}><option value="all">全部</option><option value="paid">已支付</option><option value="pending">待支付</option><option value="closed">已关闭</option></select></label>
+      <button type="submit">搜索</button>
+    </form>
+    {error&&<p className="account-error" role="alert">{error}</p>}
+    <p>共 {data?.total||0} 笔订单 · 第 {page} / {lastPage} 页</p>
+    <div className="table-wrap"><table><thead><tr><th>订单号 / 用户</th><th>套餐</th><th>金额</th><th>渠道</th><th>状态</th><th>交易流水</th><th>创建 / 到账</th></tr></thead><tbody>{data?.orders.map(order=><tr key={order.id}>
+      <td><strong>{order.id}</strong><br/>{order.username}{order.phone&&` · ${order.phone}`}</td>
+      <td>{order.plan.name}</td><td>¥{(order.plan.priceCents/100).toFixed(2)}</td><td>{order.channel==='wechat'?'微信':'支付宝'}</td>
+      <td>{order.status==='paid'?'已支付':order.status==='closed'?'已关闭':'待支付'}</td><td>{order.transactionId||'—'}</td>
+      <td>{new Date(order.createdAt).toLocaleString('zh-CN')}{order.paidAt&&<><br/>到账：{new Date(order.paidAt).toLocaleString('zh-CN')}</>}{order.closedAt&&<><br/>关闭：{new Date(order.closedAt).toLocaleString('zh-CN')}</>}</td>
+    </tr>)}</tbody></table></div>
+    {data?.orders.length===0&&<p>没有匹配的订单。</p>}
+    <div className="member-pages"><button type="button" disabled={page<=1} onClick={()=>setPage(page-1)}>上一页</button><button type="button" disabled={page>=lastPage} onClick={()=>setPage(page+1)}>下一页</button></div>
+  </section>;
+}

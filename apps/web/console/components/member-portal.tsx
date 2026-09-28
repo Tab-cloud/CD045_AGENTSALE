@@ -7,7 +7,7 @@ import {PlatformAccount,platformRequest,type Account} from './platform-account';
 const features=['model','search','image','video'] as const;
 type Feature=typeof features[number];
 type Plan={id:string;name:string;priceCents:number;days:number;limits:Record<Feature,number>};
-type Order={id:string;plan:Plan;status:'pending'|'paid';createdAt:string;channel:'wechat'|'alipay'};
+type Order={id:string;plan:Plan;status:'pending'|'paid'|'closed';createdAt:string;closedAt?:string;channel:'wechat'|'alipay'};
 type State={
   subscription:{active:boolean;membership:{plan:Plan;expiresAt:string}|null;usage:{feature:Feature;used:number}[]};
   plans:Plan[];
@@ -79,6 +79,7 @@ function Membership({user,logout}:{user:Account;logout:()=>void}){
   const [paymentNotice,setPaymentNotice]=useState('');
   const [busy,setBusy]=useState(false);
   const [checkingOrder,setCheckingOrder]=useState('');
+  const [closingOrder,setClosingOrder]=useState('');
   const [showAllOrders,setShowAllOrders]=useState(false);
   const [checkout,setCheckout]=useState<Checkout|null>(null);
   const refresh=useCallback(async()=>{const next=await platformRequest('membership') as State;setData(next);return next;},[]);
@@ -131,6 +132,17 @@ function Membership({user,logout}:{user:Account;logout:()=>void}){
     catch(cause){setError((cause as Error).message);}
     finally{setCheckingOrder('');}
   }
+  async function closeOrder(orderId:string){
+    if(!window.confirm('确定关闭这笔未付款订单吗？关闭后请不要再使用已打开的支付页面付款。'))return;
+    setClosingOrder(orderId);setError('');setPaymentNotice('');
+    try{
+      const result=await platformRequest('membership',{action:'close',orderId}) as {order:Order};
+      setPaymentNotice(result.order.status==='paid'?'订单已付款，无法关闭，会员权益已开通。':'订单已关闭。');
+      if(result.order.status==='closed'&&checkout?.order.id===orderId)setCheckout(null);
+      await refresh();
+    }catch(cause){setError((cause as Error).message);await refresh().catch(()=>{});}
+    finally{setClosingOrder('');}
+  }
 
   const active=Boolean(data?.subscription.active);
   const unavailable=!loading&&!data;
@@ -159,7 +171,25 @@ function Membership({user,logout}:{user:Account;logout:()=>void}){
       </section>
       <section className="portal-section" id="plans"><div className="portal-section-heading"><div><span className="portal-eyebrow">PLANS & PAYMENT</span><h2>选择适合你的会员套餐</h2><p>按需购买，有效期结束后手动续费，不会自动扣款。</p></div></div><div className="portal-plan-grid">{data?.plans.map(plan=><article className="portal-plan-card" key={plan.id}><div className="portal-plan-top"><span className="portal-plan-label">聆风会员</span>{currentPlan?.id===plan.id&&<span className="portal-plan-current"><Check size={14} aria-hidden="true"/>当前套餐</span>}</div><h3>{plan.name}</h3><div className="portal-plan-price"><strong>{money(plan.priceCents)}</strong><span>/ {plan.days} 天</span></div><div className="portal-plan-divider"/><ul>{features.map(feature=><li key={feature}><span>{featureNames[feature]}</span><strong>{plan.limits[feature]>0?plan.limits[feature]+' 次 / 日':'未包含'}</strong></li>)}</ul><div className="portal-pay-actions"><button type="button" className="portal-button portal-button-primary" disabled={busy||!data.channels.wechat} onClick={()=>void buy(plan.id,'wechat')}>微信支付</button><button type="button" className="portal-button portal-button-secondary" disabled={busy||!data.channels.alipay} onClick={()=>void buy(plan.id,'alipay')}>支付宝网页支付</button></div>{data.channels.alipay&&<p className="portal-plan-hint">支付宝将按当前设备跳转至电脑或手机收银台。</p>}{!data.channels.wechat&&!data.channels.alipay&&<p className="portal-plan-hint">支付方式暂未开放，请稍后再试。</p>}</article>)}</div>{data&&!data.plans.length&&<div className="portal-empty">会员套餐正在准备中，请等待管理员发布。</div>}{loading&&<div className="portal-empty">正在加载可订阅的套餐…</div>}<details className="portal-policy"><summary>额度与续费说明 <ChevronDown size={16} aria-hidden="true"/></summary><p>续费会增加有效期，续费后的能力以新购买的套餐为准。每日额度按 UTC 日期重置；网页搜索、正文读取与知识库检索均计入检索额度，已提交但失败或结果未确认的调用也可能占用额度。</p></details></section>
       {checkout&&<section className="portal-checkout" aria-live="polite"><div><span className="portal-eyebrow">PAYMENT</span><h2>{paid?'支付成功，会员已开通':'扫码完成支付'}</h2><p>{checkout.order.plan.name} · {money(checkout.order.plan.priceCents)}</p><p>{paid?'回到桌面端刷新账号状态，即可开始使用。':'二维码有效期至 '+new Date(checkout.expiresAt).toLocaleTimeString('zh-CN')+'，付款后将自动更新会员状态。'}</p><small>订单号 {checkout.order.id}</small><button type="button" className="portal-button portal-button-secondary" onClick={()=>setCheckout(null)}>关闭</button></div>{!paid&&<img src={checkout.qr} width={210} height={210} alt={channelName(checkout.order.channel)+'订单支付二维码'}/>}</section>}
-      <section className="portal-section" id="orders"><div className="portal-section-heading"><div><span className="portal-eyebrow">ORDERS</span><h2>订阅订单</h2><p>在这里查看付款状态。未确认的订单可手动查询到账结果。</p></div>{Boolean(data?.orders.length)&&<span className="portal-section-count">共 {data!.orders.length} 笔</span>}</div><div className="portal-order-list">{visibleOrders?.map(order=><article className="portal-order-row" key={order.id}><div className="portal-order-main"><h3>{order.plan.name}</h3><p>{date(order.createdAt)} · {channelName(order.channel)}</p><details><summary>查看订单号</summary><code>{order.id}</code></details></div><strong className="portal-order-price">{money(order.plan.priceCents)}</strong><div className="portal-order-side"><span className="portal-order-status" data-paid={order.status==='paid'}>{order.status==='paid'?'已支付':'待付款 / 待确认'}</span>{order.status!=='paid'&&<button type="button" className="portal-button portal-button-secondary" disabled={Boolean(checkingOrder)} onClick={()=>void checkOrder(order.id)}>{checkingOrder===order.id?<><RefreshCw size={14} aria-hidden="true"/>查询中</>:'查询到账'}</button>}</div></article>)}{data&&!data.orders.length&&<div className="portal-empty">还没有订阅订单。购买套餐后，订单会显示在这里。</div>}{loading&&<div className="portal-empty">正在加载订单…</div>}</div>{Boolean(data&&data.orders.length>3)&&<button type="button" className="portal-show-more" onClick={()=>setShowAllOrders(value=>!value)}>{showAllOrders?'收起订单':'查看全部 '+data!.orders.length+' 笔订单'}<ChevronDown size={16} aria-hidden="true"/></button>}</section>
+      <section className="portal-section" id="orders">
+        <div className="portal-section-heading"><div><span className="portal-eyebrow">ORDERS</span><h2>订阅订单</h2><p>未付款订单可以关闭；如关闭前已付款，可查询到账结果。</p></div>{Boolean(data?.orders.length)&&<span className="portal-section-count">共 {data!.orders.length} 笔</span>}</div>
+        <div className="portal-order-list">
+          {visibleOrders?.map(order=><article className="portal-order-row" key={order.id}>
+            <div className="portal-order-main"><h3>{order.plan.name}</h3><p>{date(order.createdAt)} · {channelName(order.channel)}</p><details><summary>查看订单号</summary><code>{order.id}</code></details></div>
+            <strong className="portal-order-price">{money(order.plan.priceCents)}</strong>
+            <div className="portal-order-side">
+              <span className="portal-order-status" data-paid={order.status==='paid'} data-closed={order.status==='closed'}>{order.status==='paid'?'已支付':order.status==='closed'?'已关闭':'待付款 / 待确认'}</span>
+              {order.status!=='paid'&&<div className="portal-order-actions">
+                <button type="button" className="portal-button portal-button-secondary" disabled={Boolean(checkingOrder||closingOrder)} onClick={()=>void checkOrder(order.id)}>{checkingOrder===order.id?<><RefreshCw size={14} aria-hidden="true"/>查询中</>:'查询到账'}</button>
+                {order.status==='pending'&&<button type="button" className="portal-button portal-button-close" disabled={Boolean(checkingOrder||closingOrder)} onClick={()=>void closeOrder(order.id)}>{closingOrder===order.id?'关闭中…':'关闭订单'}</button>}
+              </div>}
+            </div>
+          </article>)}
+          {data&&!data.orders.length&&<div className="portal-empty">还没有订阅订单。购买套餐后，订单会显示在这里。</div>}
+          {loading&&<div className="portal-empty">正在加载订单…</div>}
+        </div>
+        {Boolean(data&&data.orders.length>3)&&<button type="button" className="portal-show-more" onClick={()=>setShowAllOrders(value=>!value)}>{showAllOrders?'收起订单':'查看全部 '+data!.orders.length+' 笔订单'}<ChevronDown size={16} aria-hidden="true"/></button>}
+      </section>
       <AccountBindings user={user}/>
       <footer className="portal-footer"><span>聆风 · 让想法成为作品</span><span>账号与订阅在 Web 管理，创作在桌面端完成。</span></footer>
     </main>
