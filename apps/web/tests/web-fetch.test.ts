@@ -8,6 +8,15 @@ it('reads HTML with timestamp and fingerprint, stripping executable content',asy
  expect(source.text).toContain('可验证的正文材料');expect(source.text).not.toContain('HIDDEN_SCRIPT');expect(source.hash).toMatch(/^[a-f0-9]{64}$/);expect(Date.parse(source.fetchedAt)).toBeGreaterThan(0);
  expect(transport.mock.calls[1][1]).toEqual({allowedDomains:[],followRedirects:false});
 });
+it('extracts a news article before navigation and recommendation text can consume the limit',async()=>{
+ const navigation='导航推荐'.repeat(5000),article='伊朗与美国就海上安全议题分别发表声明。'.repeat(35);
+ const page=`<html><title>国际新闻</title><body><nav>${navigation}</nav><main><aside>${navigation}</aside><article><p>${article}</p></article></main><footer>${navigation}</footer></body></html>`;
+ const transport=vi.fn<typeof requestBytes>().mockImplementation(async url=>url.endsWith('/robots.txt')?reply(url,404):reply(url,200,page));
+ const source=await fetchSource('https://example.com/world/2026/09/story',[],transport);
+ expect(source.text).toBe(article);
+ expect(source.text).not.toContain('导航推荐');
+ expect(source.truncated).toBe(false);
+});
 it('checks robots again before reading a redirected path',async()=>{
  const transport=vi.fn<typeof requestBytes>().mockImplementation(async url=>url.endsWith('/robots.txt')?reply(url,200,'User-agent: *\nDisallow: /private'):reply(url,302,'',{location:'/private/data'}));
  await expect(fetchSource('https://example.com/public',[],transport)).rejects.toMatchObject({code:'ROBOTS_DENIED'});
@@ -27,5 +36,6 @@ it('bounds redirect count and extracted text',async()=>{
  const redirect=vi.fn<typeof requestBytes>().mockImplementation(async url=>url.endsWith('/robots.txt')?reply(url,404):reply(url,302,'',{location:'/again'}));
  await expect(fetchSource('https://example.com/a',[],redirect)).rejects.toMatchObject({code:'REDIRECT_LIMIT'});expect(redirect).toHaveBeenCalledTimes(8);
  const transport=vi.fn<typeof requestBytes>().mockImplementation(async url=>url.endsWith('/robots.txt')?reply(url,404):reply(url,200,'<body>'+('正文'.repeat(20000))+'</body>'));
- expect((await fetchSource('https://example.com/a',[],transport)).text.length).toBe(18000);
+ const source=await fetchSource('https://example.com/a',[],transport);
+ expect(source.text.length).toBe(18000);expect(source.truncated).toBe(true);
 });

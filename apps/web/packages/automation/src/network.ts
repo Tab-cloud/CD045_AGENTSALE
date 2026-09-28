@@ -78,11 +78,22 @@ export async function requestBytes(raw:string,options:{method?:string;headers?:R
   });
 }
 export function extractSource(html:string,url:string):Source {
-  const $=load(html);$('script,style,noscript,svg,iframe,form').remove();
+  const $=load(html);$('script,style,noscript,svg,iframe,form,nav,aside,footer').remove();
+  $('header').filter((_,element)=>$(element).closest('article').length===0).remove();
   const title=$('title').text().trim().slice(0,250)||new URL(url).hostname;
-  const text=$('body').text().replace(/\s+/g,' ').trim().slice(0,18000);
+  const candidates=['[itemprop="articleBody"]','article','main','[role="main"]'];
+  let body='';
+  for(const selector of candidates){
+    const sections=$(selector).toArray().map(element=>{
+      const block=$(element),paragraphs=block.find('p').toArray().map(p=>$(p).text().replace(/\s+/g,' ').trim()).filter(Boolean).join('\n');
+      return paragraphs.length>=80?paragraphs:block.text().replace(/\s+/g,' ').trim();
+    }).filter(text=>text.length>=80);
+    if(sections.length){body=sections.sort((a,b)=>b.length-a.length)[0];break;}
+  }
+  if(!body)body=$('body').text().replace(/\s+/g,' ').trim();
+  const truncated=body.length>18000,text=body.slice(0,18000);
   if(text.length<80)throw new FlowError('SOURCE_EMPTY','网页缺少可读取正文，可能需要登录或动态加载');
-  return {id:createHash('sha256').update(url).digest('hex').slice(0,16),url,title,text,hash:createHash('sha256').update(html).digest('hex'),fetchedAt:new Date().toISOString(),status:'fetched'};
+  return {id:createHash('sha256').update(url).digest('hex').slice(0,16),url,title,text,hash:createHash('sha256').update(html).digest('hex'),fetchedAt:new Date().toISOString(),status:'fetched',truncated};
 }
 export function robotsAllows(text:string,path:string){
   let active=false;const rules:{prefix:string;allow:boolean}[]=[];
