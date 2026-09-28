@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { CreativeConfig } from '../../packages/automation/src/creative';
-type Configuration = CreativeConfig & { hasImageKey: boolean; hasVideoKey: boolean };
+type Configuration = CreativeConfig & { hasImageKey: boolean; hasVideoKey: boolean; revision:string };
 export function CreativeSettings() {
   const [config,setConfig]=useState<Configuration|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const located=useRef(false);
@@ -13,7 +13,7 @@ export function CreativeSettings() {
     try {
       const imageKey=String(data.get('imageKey')||''),videoKey=String(data.get('videoKey')||'');
       const response=await fetch('/api/v1/creative-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        config:{editing:{enabled:data.get('editingEnabled')==='on'},image:{enabled:data.get('imageEnabled')==='on',referenceEditing:data.get('referenceEditing')==='on',baseUrl:String(data.get('imageBase')),model:String(data.get('imageModel')),size:data.get('imageSize')},video:{enabled:data.get('videoEnabled')==='on',baseUrl:data.get('videoBase'),model:data.get('videoModel'),duration:6,resolution:'768P'},avatar:{enabled:data.get('avatarEnabled')==='on',meloPythonPath:String(data.get('meloPython')||''),sadTalkerPythonPath:String(data.get('sadTalkerPython')||''),sadTalkerPath:String(data.get('sadTalkerPath')||'')}},
+        revision:config!.revision,config:{editing:{enabled:data.get('editingEnabled')==='on'},image:{enabled:data.get('imageEnabled')==='on',referenceEditing:data.get('referenceEditing')==='on',baseUrl:String(data.get('imageBase')),model:String(data.get('imageModel')),size:data.get('imageSize')},video:{enabled:data.get('videoEnabled')==='on',baseUrl:data.get('videoBase'),model:data.get('videoModel'),duration:6,resolution:'768P'},avatar:{enabled:data.get('avatarEnabled')==='on',meloPythonPath:String(data.get('meloPython')||''),sadTalkerPythonPath:String(data.get('sadTalkerPython')||''),sadTalkerPath:String(data.get('sadTalkerPath')||'')}},
         ...(data.get('clearImage')?{imageKey:''}:imageKey?{imageKey}:{}),...(data.get('clearVideo')?{videoKey:''}:videoKey?{videoKey}:{})
       })});
       const body=await response.json();if(!response.ok)throw new Error(body.message);

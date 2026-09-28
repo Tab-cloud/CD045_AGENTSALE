@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { requestBytes, validUrl } from './network';
 import {createVideoEditor,editingAvailable,editPlanSchema} from './video-edit';
 import { FlowError } from './types';
+import { DomainError } from '@agentsale/domain';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 export const creativeConfigSchema = z.object({
@@ -24,7 +25,7 @@ export const creativeDefaults: CreativeConfig = {
 };
 export const creativeRequestSchema = z.object({ id: z.string().uuid(), kind: z.enum(['image','video','avatar']), prompt: text(2500), portraitId:z.string().uuid().optional(), referenceId: z.string().uuid().optional(), editPlan:editPlanSchema.optional() }).strict().refine(r => !r.referenceId || r.kind === 'image', '参考图仅用于图片生成').refine(r=>!r.editPlan||r.kind==='video','剪辑仅支持视频').refine(r=>r.kind!=='avatar'||!!r.portraitId,'数字人任务需要授权人像照片').refine(r=>r.kind==='avatar'||!r.portraitId,'人像照片仅用于数字人视频');
 type Request = z.infer<typeof creativeRequestSchema>;
-type Secrets = { config: CreativeConfig; imageKey: string; videoKey: string };
+type Secrets = { config: CreativeConfig; imageKey: string; videoKey: string; revision: string };
 export type CreativeJob = Request & { fingerprint: string; status: 'submitting'|'processing'|'completed'|'unknown'|'failed'; taskId?: string; fileId?: string; mime?: string; file?: string; message: string; updatedAt: string };
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const idSchema = z.string().regex(/^\d{1,64}$/);
@@ -51,23 +52,24 @@ export function createCreativeService(root: string, transport: typeof requestByt
   async function secrets(): Promise<Secrets> {
     let bytes: Buffer;
     try { bytes = await readFile(path.join(directory, 'credentials.sealed')); }
-    catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { config: structuredClone(creativeDefaults), imageKey: '', videoKey: '' }; throw e; }
+    catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { config: structuredClone(creativeDefaults), imageKey: '', videoKey: '', revision:'unconfigured' }; throw e; }
     try {
       const cipher = createDecipheriv('aes-256-gcm', await key(), bytes.subarray(0,12)); cipher.setAuthTag(bytes.subarray(12,28));
       const value = JSON.parse(Buffer.concat([cipher.update(bytes.subarray(28)), cipher.final()]).toString());
       const config=value.config?.avatar?.baseUrl?{...value.config,avatar:creativeDefaults.avatar}:value.config;
-      return { config: creativeConfigSchema.parse(config), imageKey: value.imageKey, videoKey: value.videoKey };
+      return { config: creativeConfigSchema.parse(config), imageKey: value.imageKey, videoKey: value.videoKey, revision:value.revision||digest(JSON.stringify(value)) };
     } catch { throw new FlowError('CREATIVE_VAULT', '无法读取创作服务配置，请检查本机配置文件'); }
   }
-  const publicConfig = (s: Secrets) => ({ ...s.config, hasImageKey: !!s.imageKey, hasVideoKey: !!s.videoKey });
-  async function configure(raw: unknown, imageKey?: string, videoKey?: string) {
+  const publicConfig = (s: Secrets) => ({ ...s.config, hasImageKey: !!s.imageKey, hasVideoKey: !!s.videoKey, revision:s.revision });
+  async function configure(raw: unknown, imageKey?: string, videoKey?: string, expectedRevision?:string) {
     const operation = writes.then(async () => {
       const config = creativeConfigSchema.parse(raw);
       const endpoint = validUrl(config.image.baseUrl);
       if (endpoint.protocol !== 'https:' || endpoint.search) throw new FlowError('CREATIVE_ENDPOINT', '图片服务需使用不含查询参数的 HTTPS 接口地址');
       for (const value of [imageKey,videoKey]) if (value !== undefined && (value.length > 4000 || /[\r\n]/.test(value))) throw new FlowError('CREATIVE_KEY', '密钥格式无效');
       const old = await secrets();
-      const next: Secrets = { config, imageKey: imageKey?.trim() ?? (old.config.image.baseUrl === config.image.baseUrl ? old.imageKey : ''), videoKey: videoKey?.trim() ?? (old.config.video.baseUrl === config.video.baseUrl ? old.videoKey : '') };
+      if(expectedRevision!==undefined&&old.revision!==expectedRevision)throw new DomainError('CONFIG_CHANGED','配置已被其他管理员修改，请刷新后重试',409);
+      const next: Secrets = { config, imageKey: imageKey?.trim() ?? (old.config.image.baseUrl === config.image.baseUrl ? old.imageKey : ''), videoKey: videoKey?.trim() ?? (old.config.video.baseUrl === config.video.baseUrl ? old.videoKey : ''),revision:randomUUID() };
       if ((config.image.enabled && !next.imageKey) || (config.video.enabled && !next.videoKey)) throw new FlowError('CREATIVE_KEY', '启用服务前请填写对应密钥');
       if(config.avatar.enabled)await validateAvatarInstallation(config.avatar);
       const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', await key(), iv), encrypted = Buffer.concat([cipher.update(JSON.stringify(next)), cipher.final()]);

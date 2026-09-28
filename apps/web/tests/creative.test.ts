@@ -50,6 +50,8 @@ PYWORKER
     const {root,service}=await setup(async()=>{throw new Error('must not call provider');});
     const value=await service.configure(enabled(),'secret-image','secret-video');
     expect(value.hasImageKey).toBe(true);expect(JSON.stringify(value)).not.toContain('secret-image');
+    await expect(service.configure(enabled(),undefined,undefined,'unconfigured')).rejects.toMatchObject({code:'CONFIG_CHANGED',status:409});
+    expect((await service.configuration()).revision).toBe(value.revision);
     expect((await readFile(path.join(root,'creative/credentials.sealed'))).includes(Buffer.from('secret-image'))).toBe(false);
     expect(await createCreativeService(root).capabilities()).toMatchObject({image:true,video:true});
     expect(await service.configuration()).not.toHaveProperty('imageKey');

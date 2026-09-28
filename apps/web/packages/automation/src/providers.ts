@@ -111,13 +111,13 @@ export async function marketing(job:Job,config:SecretSettings){
 
 /** The client supplies role/context only; provider credentials and policy stay on the Web server. */
 export async function desktopComplete(config:SecretSettings,role:string,context:Record<string,unknown>){
-  const {chatPrompts,digitalHumanPrompts,creativePrompts,researchPrompts,ecommercePrompts}=await import('./desktop-prompts');
+  const {chatPrompts,digitalHumanPrompts,creativePrompts,researchPrompts,ecommercePrompts,fileWorkPrompts}=await import('./desktop-prompts');
   const {skillPrompts,skillInstructions,skillBoundary}=await import('./skills');
   const skillContext=skillInstructions(context.skills,context.workflow);
-  const prompt=(context.workflow==='digital_human'?digitalHumanPrompts:context.workflow==='chat'?chatPrompts:context.workflow==='skills'?skillPrompts:context.workflow==='ecommerce'?ecommercePrompts:context.workflow==='creative'?creativePrompts:researchPrompts)[role];
+  const prompt=(context.workflow==='file_work'?fileWorkPrompts:context.workflow==='digital_human'?digitalHumanPrompts:context.workflow==='chat'?chatPrompts:context.workflow==='skills'?skillPrompts:context.workflow==='ecommerce'?ecommercePrompts:context.workflow==='creative'?creativePrompts:researchPrompts)[role];
   if(!prompt)throw new FlowError('ROLE_DENIED','此 Agent 没有该模型调用权限');
   assertProvider(config,false);
-  const body:Record<string,unknown>={model:config.model,messages:[{role:'system',content:prompt+(skillContext?'\n'+skillBoundary+skillContext+'\n'+skillBoundary:'')},{role:'user',content:JSON.stringify(context)}],[config.tokenParameter]:Math.min(config.maxTokens,4000)};
+  const body:Record<string,unknown>={model:config.model,messages:[{role:'system',content:prompt+(skillContext?'\n'+skillBoundary+skillContext+'\n'+skillBoundary:'')},{role:'user',content:JSON.stringify(context)}],[config.tokenParameter]:Math.min(config.maxTokens,context.workflow==='file_work'?8000:4000)};
   if(config.protocol==='minimax'){body.reasoning_split=true;if(config.model==='MiniMax-M3')body.thinking={type:'disabled'};}
   const response=await requestBytes(config.baseUrl.replace(/\/$/,'')+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',...(config.apiKey?{Authorization:'Bearer '+config.apiKey}:{})},body:JSON.stringify(body),local:config.localModel,trustedMiniMax:config.protocol==='minimax',timeout:120000,maxBytes:1_000_000});
   if(response.status!==200)throw new FlowError('MODEL_HTTP','模型服务暂不可用，请联系管理员检查服务额度与配置');

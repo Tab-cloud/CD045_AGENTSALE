@@ -195,6 +195,8 @@ describe('真实协议与持久流程',()=>{
     const results=await Promise.allSettled([e.vault.save({...settings,model:'new-model'}),e.vault.verified(before.revision)]);
     expect(results[0].status).toBe('fulfilled');expect(results[1]).toMatchObject({status:'rejected',reason:{code:'CONFIG_CHANGED'}});
     expect(await e.vault.get()).toMatchObject({model:'new-model',apiKey:'OLD-ENDPOINT-KEY',verifiedAt:null});
+    await expect(e.vault.save({...settings,model:'stale-admin-edit'},undefined,undefined,undefined,undefined,false,before.revision)).rejects.toMatchObject({code:'CONFIG_CHANGED',status:409});
+    expect((await e.vault.get()).model).toBe('new-model');
     await e.vault.save({...settings,baseUrl:'http://127.0.0.1:11434/v1'});expect(await e.vault.get()).toMatchObject({apiKey:'',searchKey:'SEARCH-KEY'});
     await e.vault.save(settings,undefined,'');expect(safeSettings(await e.vault.get()).hasSearchKey).toBe(false);
     const mistakenMiniMax={...defaults,baseUrl:'https://api.openai.com/v1',model:'minimax-m3',protocol:'openai' as const,callLimitCents:25,dailyLimitCents:200};

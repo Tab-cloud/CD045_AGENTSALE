@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 
 const staticRoot=fileURLToPath(new URL('../admin-console/dist/',import.meta.url));
-const services=new Set(['admin','creative-config','auth','membership-admin']);
+const services=new Set(['admin','creative-config','auth','membership-admin','dashboard']);
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};
 const security={'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY'};
 
