@@ -78,6 +78,31 @@ export async function webSearch(query:string,config:SecretSettings,locale:Search
     if(!hits.length){const response=await requestBytes(urls.bing,{headers:{Accept:'application/rss+xml, application/xml;q=0.9, text/xml;q=0.8',...(urls.language?{'Accept-Language':urls.language}:{})},timeout:20000,maxBytes:512_000});if(response.status!==200)throw new FlowError('SEARCH_HTTP','内置公开网页搜索返回 '+response.status);hits=parseBingRss(response.body.toString(),config.allowedDomains);}
   if(!hits.length)throw new FlowError('SEARCH_EMPTY','搜索未找到允许范围内的公开来源，请调整品类词或域名范围');return hits.slice(0,6);
 }
+export function parseNewsRss(xml:string,asOf=new Date()):WebSearchHit[]{
+  const $=load(xml,{xmlMode:true}),hits:WebSearchHit[]=[],oldest=asOf.getTime()-48*60*60*1000;
+  $('item').each((_,item)=>{try{
+    const link=$(item).find('link').first().text().trim(),url=validUrl(link);
+    const publishedAt=$(item).find('pubDate').first().text().trim(),published=Date.parse(publishedAt);
+    if(!Number.isFinite(published)||published<oldest||published>asOf.getTime()+60*60*1000||hits.some(hit=>hit.url===url.href))return;
+    const title=$(item).find('title').first().text().replace(/\s+/g,' ').trim().slice(0,250);
+    if(!title)return;
+    const description=load($(item).find('description').first().text()).text().replace(/\s+/g,' ').trim().slice(0,500);
+    hits.push({url:url.href,title,description,source:'news_rss',publishedAt:new Date(published).toISOString()});
+  }catch{}});
+  return hits.slice(0,12);
+}
+export async function newsSearch(query:string,config:SecretSettings,locale:SearchLocale={}):Promise<WebSearchHit[]>{
+  const feeds=['https://www.theguardian.com/world/rss','https://feeds.bbci.co.uk/news/world/rss.xml'];
+  const results=await Promise.allSettled(feeds.map(async feed=>{
+    const response=await requestBytes(feed,{headers:{Accept:'application/rss+xml, application/xml;q=0.9'},timeout:12000,maxBytes:512_000});
+    return response.status===200?parseNewsRss(response.body.toString()):[];
+  }));
+  const byFeed=results.map(result=>result.status==='fulfilled'?result.value:[]),combined:WebSearchHit[]=[];
+  for(let index=0;combined.length<6&&byFeed.some(feed=>feed.length>index);index++)for(const feed of byFeed){
+    const hit=feed[index];if(hit&&!combined.some(existing=>existing.url===hit.url)&&allowedHit(new URL(hit.url),config.allowedDomains))combined.push(hit);
+  }
+  return combined.length?combined.slice(0,6):webSearch(query,config,locale);
+}
 export async function searchSuppliers(query:string,config:SecretSettings){return (await webSearch(query,config)).map(hit=>hit.url).slice(0,5);}
 const normalize=(s:string)=>s.replace(/\s+/g,' ').trim();
 export function validateResearch(report:Research,sources:Source[]):Research {

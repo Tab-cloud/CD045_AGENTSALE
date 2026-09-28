@@ -55,10 +55,10 @@ it('shares server-enforced quota between search and reading, then honors revocat
  const order=await p.members.createOrder(account.user,plan.id,'wechat');await p.members.settle(order.id,'wechat',1,'synthetic-test-transaction');
  const network=await import('../packages/automation/src/network'),providers=await import('../packages/automation/src/providers');
  const fetchSpy=vi.spyOn(network,'fetchSource').mockResolvedValue({id:'fixture',url:'https://example.com/final',title:'测试正文',text:'公开正文',hash:'test-hash',fetchedAt:new Date().toISOString(),status:'fetched'});
- const searchSpy=vi.spyOn(providers,'webSearch').mockResolvedValue([]);
+ const searchSpy=vi.spyOn(providers,'newsSearch').mockResolvedValue([]);
  try{
   const page=await gateway.POST(req('gateway',account.token,{action:'fetch',url:'https://example.com/article'}));expect(page.status).toBe(200);expect((await page.json()).page).toMatchObject({text:'公开正文',url:'https://example.com/final',truncated:false});
-  expect((await gateway.POST(req('gateway',account.token,{action:'search',query:'followup'}))).status).toBe(200);
+  expect((await gateway.POST(req('gateway',account.token,{action:'search',query:'followup',vertical:'news'}))).status).toBe(200);
   expect((await gateway.POST(req('gateway',account.token,{action:'fetch',url:'https://example.com/more'}))).status).toBe(429);expect(fetchSpy).toHaveBeenCalledTimes(1);expect(searchSpy).toHaveBeenCalledTimes(1);
   expect((await p.members.status(account.user.id)).usage).toContainEqual({feature:'search',used:2});
   await p.members.revoke(account.user.id,admin);

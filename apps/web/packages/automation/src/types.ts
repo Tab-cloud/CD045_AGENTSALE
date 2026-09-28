@@ -28,7 +28,7 @@ export type PublicSettings = Settings & { hasApiKey: boolean;hasMinimaxKey:boole
 export const defaults: Settings = { baseUrl:'https://api.openai.com/v1',model:'',localModel:false,format:'json_schema',protocol:'openai',minimax:minimaxSchema.parse({}),callLimitCents:0,dailyLimitCents:0,allowedDomains:[],connectors:connectorSettingsSchema.parse({}) };
 export type User = { id:string; username:string; role:'admin'|'operator'; enabled:boolean; phone?:string|null; wechatBound?:boolean };
 export type Source = { id:string; url:string; title:string; text:string; hash:string; fetchedAt:string; status:'fetched'|'imported'|'unavailable'; truncated?:boolean; category?:'supplier'|'market'; error?:string };
-export type WebSearchHit = { url:string; title:string; description:string; source:'duckduckgo_html'|'bing_rss' };
+export type WebSearchHit = { url:string; title:string; description:string; source:'duckduckgo_html'|'bing_rss'|'news_rss'; publishedAt?:string };
 export type ResearchToolName = 'web.search'|'web.fetch';
 export type ResearchToolRun = {
   id:string; iteration:number; tool:ResearchToolName; status:'succeeded'|'failed'|'rejected';
