@@ -135,7 +135,6 @@ h3{font-size:15px;line-height:1.5}
 .model-preset-row{display:flex;align-items:flex-end;gap:14px 18px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--subtle)}
 .model-preset-field{width:min(100%,280px);flex:none}
 .model-preset-help{flex:1;min-width:min(100%,230px);padding-bottom:7px;color:var(--muted);font-size:11px;line-height:1.6}
-.model-local-field{align-self:end}
 .admin-panel .connector-block{padding:17px 0;border-top:1px solid var(--line)}
 .admin-panel .connector-block:first-of-type{margin-top:18px}
 .settings-row{display:flex;justify-content:space-between;gap:20px;padding:13px 0;border-bottom:1px solid var(--line);font-size:12px}
@@ -160,6 +159,13 @@ body.dark .account-error{background:#412725;color:#ffaea5!important}
 .member-search{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:18px 0}.member-search label{display:grid;gap:7px;min-width:min(280px,100%)}.member-pages{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.member-pages button:disabled{opacity:.45;cursor:not-allowed}.admin-panel details#channels{margin:24px 0;padding:18px;border:1px solid var(--line);border-radius:12px}.admin-panel details#channels>summary{cursor:pointer;font-weight:650;color:var(--text)}.admin-panel details#channels[open]>summary{margin-bottom:16px}
 .member-search input,.member-search select,.auth-services input:not([type=checkbox]){min-height:39px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text)}
 .member-search button,.member-pages button,.billing-admin td button{border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);padding:8px 11px}
+.billing-admin .member-editor-row td{padding:0 0 16px;text-align:left;background:var(--surface)}
+.member-editor{display:grid;gap:15px;margin-top:10px;padding:18px;border:1px solid var(--line);border-radius:10px;background:var(--subtle)}
+.member-editor h3{font-size:13px}.member-editor p{margin-top:4px;color:var(--muted);font-size:11px}
+.member-editor-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.member-editor-fields .member-reason{grid-column:1/-1}
+.member-editor-fields input,.member-editor-fields select{display:block;width:100%;min-width:0;min-height:39px;margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text)}
+.member-editor-actions{display:flex;gap:9px;flex-wrap:wrap}.member-editor-actions .account-primary{margin:0}
 .auth-services form{margin-top:18px}.auth-services fieldset>label{display:flex;align-items:center;gap:8px}.auth-services .billing-grid label{display:grid;gap:7px}.auth-services code{color:var(--primary)}
 #orders table{min-width:850px}#users table{min-width:900px}#orders td:first-child strong{font-size:11px;overflow-wrap:anywhere}
 .overview-services{margin-bottom:15px}.overview-service-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px}.overview-service-grid>div{display:grid;align-content:start;gap:5px;min-width:0;padding:14px;border-radius:8px;background:var(--subtle)}.overview-service-grid span{color:var(--muted);font-size:11px}.overview-service-grid strong{font-size:12px;font-weight:650;line-height:1.5}.overview-service-grid a{color:var(--primary);font-size:11px;text-decoration:none}.overview-service-grid a:hover{text-decoration:underline}

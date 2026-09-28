@@ -7,6 +7,36 @@ import {randomUUID} from 'node:crypto';
 let repo:Repository;beforeAll(async()=>{repo=await createRepository();},30000);afterAll(async()=>repo?.close());
 async function setup(){const workspace=randomUUID(),auth=createAuth(repo,workspace),members=createMembership(repo,workspace),admin=await auth.create('administrator','test-long-password','admin'),user=await auth.register('member','test-long-password');const plan:Plan={id:'test',name:'测试套餐',days:30,priceCents:100,published:true,limits:{model:2,search:1,image:1,video:0}};await members.savePlan(plan,admin);return {workspace,auth,members,admin,user,plan};}
 describe('subscription authority',()=>{
+ it('lets administrators set a member plan and expiry without recording a payment',async()=>{
+  const {workspace,members,admin,user,plan}=await setup();
+  const firstExpiry=new Date(Date.now()+10*86400000).toISOString();
+  await expect(members.setMembership(user.id,plan.id,firstExpiry,'线下签约',user)).rejects.toThrow('管理员');
+  await expect(members.setMembership(user.id,'missing',firstExpiry,'线下签约',admin)).rejects.toThrow('套餐不存在');
+  await expect(members.setMembership(randomUUID(),plan.id,firstExpiry,'线下签约',admin)).rejects.toThrow('用户不存在');
+  await expect(members.setMembership(user.id,plan.id,new Date(Date.now()-1000).toISOString(),'线下签约',admin)).rejects.toThrow('到期时间');
+  await members.setMembership(user.id,plan.id,firstExpiry,'线下签约',admin);
+  expect((await members.status(user.id)).membership).toMatchObject({plan:{id:plan.id},expiresAt:firstExpiry,status:'active'});
+  await members.requireFeature(user.id,'model');
+  const updatedPlan={...plan,id:'premium',name:'高级套餐',limits:{...plan.limits,video:2}};
+  await members.savePlan(updatedPlan,admin);
+  const secondExpiry=new Date(Date.now()+20*86400000).toISOString();
+  await members.setMembership(user.id,updatedPlan.id,secondExpiry,'售后延长服务',admin);
+  expect((await members.usersPage(admin,1,'member')).users[0].subscription).toMatchObject({active:true,membership:{plan:{id:'premium'},expiresAt:secondExpiry}});
+  await members.requireFeature(user.id,'video');
+  const records=await repo.scoped(workspace,async tx=>(await tx.execute(sql`SELECT summary FROM audit WHERE action='membership.manual_set' AND object_id=${user.id}`)).rows);
+  expect(records).toHaveLength(2);
+  expect(records.some(record=>String(record.summary).includes('售后延长服务'))).toBe(true);
+  expect((await members.ordersPage(admin,1,'','all')).total).toBe(0);
+  expect((await members.dashboard(admin)).totals).toMatchObject({activeMembers:1,paidOrders:0,revenueCents:0});
+  const order=await members.createOrder(user,plan.id,'alipay');
+  await members.settle(order.id,'alipay',plan.priceCents,'renew-after-manual');
+  expect(Date.parse((await members.status(user.id)).membership!.expiresAt)).toBe(Date.parse(secondExpiry)+plan.days*86400000);
+ });
+ it('does not grant membership to a disabled account',async()=>{
+  const {members,admin,user,plan,auth}=await setup();
+  await auth.disable(user.id,admin);
+  await expect(members.setMembership(user.id,plan.id,new Date(Date.now()+86400000).toISOString(),'人工开通',admin)).rejects.toThrow('先启用');
+ });
  it('paginates and searches members without loading the entire user list',async()=>{
   const {auth,members,admin,user,plan}=await setup();
   await expect(members.usersPage(user,1,'')).rejects.toThrow('管理员');
