@@ -30,16 +30,26 @@ export function createMembership(repo:Repository,workspace:string){
     admin(actor);
     const pageSize=20,offset=(page-1)*pageSize,needle=query.trim().toLowerCase();
     return repo.scoped(workspace,async tx=>{
-      const filter=sql`(${needle}='' OR position(${needle} in lower(u.username))>0)`;
+      const filter=sql`(${needle}='' OR position(${needle} in lower(u.username))>0 OR position(${needle} in COALESCE(u.phone,''))>0)`;
       const total=Number((await tx.execute(sql`SELECT count(*)::int AS total FROM app_users u WHERE ${filter}`)).rows[0].total);
-      const rows=(await tx.execute(sql`SELECT u.id,u.username,u.role,u.enabled,m.document AS membership
+      const rows=(await tx.execute(sql`SELECT u.id,u.username,u.phone,u.wechat_openid IS NOT NULL AS wechat_bound,u.role,u.enabled,m.document AS membership
         FROM app_users u LEFT JOIN memberships m ON m.user_id=u.id AND m.workspace_id=u.workspace_id
         WHERE ${filter} ORDER BY u.username,u.id LIMIT ${pageSize} OFFSET ${offset}`)).rows;
       return {page,pageSize,total,users:rows.map(row=>{
         const membership=row.membership as Membership|null;
-        return {id:String(row.id),username:String(row.username),role:String(row.role),enabled:Boolean(row.enabled),
+        return {id:String(row.id),username:String(row.username),phone:row.phone?String(row.phone):null,wechatBound:Boolean(row.wechat_bound),role:String(row.role),enabled:Boolean(row.enabled),
           subscription:{active:!!membership&&membership.status==='active'&&Date.parse(membership.expiresAt)>Date.now(),membership}};
       })};
+    });
+  }
+  async function ordersPage(actor:User,page:number,query:string,status:'all'|'paid'|'pending'){
+    admin(actor);
+    const pageSize=20,offset=(page-1)*pageSize,needle=query.trim().toLowerCase();
+    return repo.scoped(workspace,async tx=>{
+      const filter=sql`(${status}='all' OR o.status=${status}) AND (${needle}='' OR position(${needle} in lower(u.username))>0 OR position(${needle} in COALESCE(u.phone,''))>0 OR position(${needle} in lower(o.id))>0)`;
+      const total=Number((await tx.execute(sql`SELECT count(*)::int AS total FROM membership_orders o JOIN app_users u ON u.id=o.user_id AND u.workspace_id=o.workspace_id WHERE ${filter}`)).rows[0].total);
+      const rows=(await tx.execute(sql`SELECT o.document,u.username,u.phone FROM membership_orders o JOIN app_users u ON u.id=o.user_id AND u.workspace_id=o.workspace_id WHERE ${filter} ORDER BY o.document->>'createdAt' DESC,o.id DESC LIMIT ${pageSize} OFFSET ${offset}`)).rows;
+      return {page,pageSize,total,orders:rows.map(row=>({...(row.document as Order),username:String(row.username),phone:row.phone?String(row.phone):null}))};
     });
   }
   async function savePlan(raw:unknown,actor:User){admin(actor);const p=planSchema.parse(raw);await repo.scoped(workspace,async tx=>{await tx.execute(sql`INSERT INTO membership_plans VALUES(${p.id},${workspace},${JSON.stringify(p)}::jsonb) ON CONFLICT(workspace_id,id) DO UPDATE SET document=excluded.document`);await audit(tx,'membership.plan',p.id,actor.id);});return p;}
@@ -91,5 +101,5 @@ export function createMembership(repo:Repository,workspace:string){
   async function settle(id:string,channel:Order['channel'],cents:number,transactionId:string){return repo.scoped(workspace,async tx=>{await tx.execute(sql`SELECT pg_advisory_xact_lock(450211)`);const row=(await tx.execute(sql`SELECT document FROM membership_orders WHERE id=${id} FOR UPDATE`)).rows[0];const o=row?.document as Order|undefined;if(!o||o.channel!==channel||o.plan.priceCents!==cents||!transactionId)throw new DomainError('PAYMENT_MISMATCH','支付订单校验失败',400);if(o.status==='paid'){if(o.transactionId!==transactionId)throw new DomainError('PAYMENT_MISMATCH','支付流水不匹配',400);return o;}const m=(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${o.userId} FOR UPDATE`)).rows[0]?.document as Membership|undefined;const base=m?.status==='active'?Math.max(Date.now(),Date.parse(m.expiresAt)):Date.now();const next:Membership={plan:o.plan,status:'active',expiresAt:new Date(base+o.plan.days*86400000).toISOString()};o.status='paid';o.transactionId=transactionId;o.paidAt=new Date().toISOString();await tx.execute(sql`INSERT INTO memberships VALUES(${o.userId},${workspace},${JSON.stringify(next)}::jsonb) ON CONFLICT(user_id) DO UPDATE SET document=excluded.document WHERE memberships.workspace_id=${workspace}`);await tx.execute(sql`UPDATE membership_orders SET status='paid',document=${JSON.stringify(o)}::jsonb WHERE id=${id}`);await audit(tx,'membership.paid',id,channel);return o;});}
   async function ownAsset(id:string,userId:string,kind?:'image'|'video'){return repo.scoped(workspace,async tx=>{if(kind)await tx.execute(sql`INSERT INTO service_assets VALUES(${id},${workspace},${userId},${kind}) ON CONFLICT DO NOTHING`);const row=(await tx.execute(sql`SELECT user_id,kind FROM service_assets WHERE id=${id}`)).rows[0];if(!row||row.user_id!==userId||kind&&row.kind!==kind)throw new DomainError('NOT_FOUND','作品不存在',404);return row.kind as 'image'|'video';});}
   async function claimAsset(id:string,userId:string,kind:'image'|'video'){await repo.scoped(workspace,async tx=>{await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);const existing=(await tx.execute(sql`SELECT user_id,kind FROM service_assets WHERE id=${id}`)).rows[0];if(existing){if(existing.user_id!==userId||existing.kind!==kind)throw new DomainError('NOT_FOUND','作品不存在',404);return;}const m=(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${userId}`)).rows[0]?.document as Membership|undefined;if(!m||m.status!=='active'||Date.parse(m.expiresAt)<=Date.now()||!m.plan.limits[kind])throw new DomainError('SUBSCRIPTION_REQUIRED','会员未开通此服务或已到期',403);const used=Number((await tx.execute(sql`SELECT count(*) AS n FROM service_usage WHERE user_id=${userId} AND feature=${kind} AND day=${day()}`)).rows[0].n);if(used>=m.plan.limits[kind])throw new DomainError('QUOTA_EXCEEDED','今日创作额度已用完',429);await tx.execute(sql`INSERT INTO service_assets VALUES(${id},${workspace},${userId},${kind})`);await tx.execute(sql`INSERT INTO service_usage VALUES(${randomUUID()},${workspace},${userId},${kind},${day()})`);});}
-  return {status,requireFeature,consume,plans,usersPage,savePlan,revoke,createOrder,order,orders,dashboard,settle,ownAsset,claimAsset};
+  return {status,requireFeature,consume,plans,usersPage,ordersPage,savePlan,revoke,createOrder,order,orders,dashboard,settle,ownAsset,claimAsset};
 }

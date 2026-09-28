@@ -4,13 +4,19 @@ import {AdminPanel} from './admin-panel';
 import {BillingSettings} from './billing-settings';
 import {CreativeSettings} from './creative-settings';
 import {OverviewDashboard} from './overview-dashboard';
+import {MemberUsers} from './member-users';
+import {OrderLedger} from './order-ledger';
+import {AuthServicesEditor} from './auth-services-editor';
 import {PlatformAccount} from '../../console/components/platform-account';
 
 const sections = [
   {id:'overview',label:'首页概览',number:'00',title:'平台概览',description:'查看会员与服务运行情况，并管理平台配置。'},
   {id:'membership',label:'会员与支付',number:'01',title:'会员与支付',description:'管理会员套餐、支付渠道与用户权益。'},
-  {id:'services',label:'模型与搜索',number:'02',title:'模型与搜索',description:'配置桌面端使用的平台模型和检索服务。'},
-  {id:'creative',label:'图片与视频',number:'03',title:'图片与视频',description:'配置桌面端创作任务所使用的服务接口。'},
+  {id:'users',label:'用户管理',number:'02',title:'用户管理',description:'查看注册用户、账号绑定和会员权限。'},
+  {id:'orders',label:'订阅账单',number:'03',title:'订阅账单',description:'查询会员订单、收款状态和交易记录。'},
+  {id:'auth-services',label:'登录与短信',number:'04',title:'登录与短信',description:'配置手机号验证码与微信登录服务。'},
+  {id:'services',label:'模型与搜索',number:'05',title:'模型与搜索',description:'配置桌面端使用的平台模型和检索服务。'},
+  {id:'creative',label:'图片与视频',number:'06',title:'图片与视频',description:'配置桌面端创作任务所使用的服务接口。'},
 ] as const;
 type SectionId = typeof sections[number]['id'];
 function currentSection():SectionId{
@@ -49,6 +55,9 @@ export function AdminApp({operatorUrl}:{operatorUrl:string}){
         <div className="page-heading"><div><span className="portal-label">LINGFENG · PLATFORM</span><h1>{active.title}</h1><p>{active.description}</p></div><a className="btn secondary" href={operatorUrl}>打开会员中心 <span aria-hidden="true">↗</span></a></div>
         {activeSection==='overview'&&<OverviewDashboard/>}
         {activeSection==='membership'&&<BillingSettings/>}
+        {activeSection==='users'&&<MemberUsers/>}
+        {activeSection==='orders'&&<OrderLedger/>}
+        {activeSection==='auth-services'&&<AuthServicesEditor/>}
         {activeSection==='services'&&<AdminPanel/>}
         {activeSection==='creative'&&<CreativeSettings/>}
         <footer>聆风管理控制台 <span>配置修改保留审计记录</span></footer>

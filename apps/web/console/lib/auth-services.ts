@@ -1,0 +1,22 @@
+import {createCipheriv,createDecipheriv,createHash,createHmac,randomBytes,randomUUID} from 'node:crypto';
+import {mkdir,readFile,rename,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {z} from 'zod';
+import Dysmsapi20170525,{SendSmsRequest} from '@alicloud/dysmsapi20170525';
+import {Config as OpenApiConfig} from '@alicloud/openapi-client';
+import {DomainError} from '@agentsale/domain';
+
+const schema=z.object({sms:z.object({enabled:z.boolean(),accessKeyId:z.string().max(200),accessKeySecret:z.string().max(500),signName:z.string().max(100),templateCode:z.string().max(100)}).strict(),wechat:z.object({enabled:z.boolean(),appId:z.string().max(100),appSecret:z.string().max(500)}).strict()}).strict();
+type Config=z.infer<typeof schema>;
+const empty:Config={sms:{enabled:false,accessKeyId:'',accessKeySecret:'',signName:'',templateCode:''},wechat:{enabled:false,appId:'',appSecret:''}};
+export function createAuthServices(root:string){
+  const directory=path.join(root,'auth-services');let writes:Promise<unknown>=Promise.resolve();
+  async function key(){await mkdir(directory,{recursive:true,mode:0o700});const file=path.join(directory,'key');try{await writeFile(file,randomBytes(32),{flag:'wx',mode:0o600});}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}return readFile(file);}
+  async function get():Promise<Config>{let data:Buffer;try{data=await readFile(path.join(directory,'config.sealed'));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return structuredClone(empty);throw error;}const decipher=createDecipheriv('aes-256-gcm',await key(),data.subarray(0,12));decipher.setAuthTag(data.subarray(12,28));return schema.parse(JSON.parse(Buffer.concat([decipher.update(data.subarray(28)),decipher.final()]).toString()));}
+  const revision=(value:Config)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const safe=(value:Config)=>({revision:revision(value),sms:{...value.sms,accessKeySecret:'',hasAccessKeySecret:!!value.sms.accessKeySecret},wechat:{...value.wechat,appSecret:'',hasAppSecret:!!value.wechat.appSecret}});
+  async function configure(raw:unknown,expectedRevision:string){const task=writes.then(async()=>{const next=schema.parse(raw),old=await get();if(expectedRevision!==revision(old))throw new DomainError('CONFIG_CHANGED','配置已被其他管理员修改，请刷新后重试',409);if(!next.sms.accessKeySecret&&next.sms.accessKeyId===old.sms.accessKeyId)next.sms.accessKeySecret=old.sms.accessKeySecret;if(!next.wechat.appSecret&&next.wechat.appId===old.wechat.appId)next.wechat.appSecret=old.wechat.appSecret;if(next.sms.enabled&&(!next.sms.accessKeyId||!next.sms.accessKeySecret||!next.sms.signName||!/^SMS_\d+$/.test(next.sms.templateCode)))throw new DomainError('SMS_CONFIG','请填写阿里云短信 AccessKey、已审核签名和验证码模板 CODE',400);if(next.wechat.enabled&&(!/^wx[a-f0-9]{16}$/i.test(next.wechat.appId)||!next.wechat.appSecret))throw new DomainError('WECHAT_CONFIG','请填写微信网站应用 App ID 与 App Secret',400);if(next.wechat.enabled&&!process.env.LINGFENG_PUBLIC_URL?.startsWith('https://'))throw new DomainError('WECHAT_CONFIG','微信登录需要会员站点公网 HTTPS 地址',400);const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',await key(),iv),data=Buffer.concat([cipher.update(JSON.stringify(next)),cipher.final()]);const temp=path.join(directory,randomUUID());await writeFile(temp,Buffer.concat([iv,cipher.getAuthTag(),data]),{mode:0o600});await rename(temp,path.join(directory,'config.sealed'));return safe(next);});writes=task.catch(()=>undefined);return task;}
+  async function sendSms(phone:string,code:string){const config=(await get()).sms;if(!config.enabled)throw new DomainError('SMS_UNCONFIGURED','短信注册尚未启用，请联系管理员',503);const client=new Dysmsapi20170525(new OpenApiConfig({accessKeyId:config.accessKeyId,accessKeySecret:config.accessKeySecret,endpoint:'dysmsapi.aliyuncs.com'}));let response;try{response=await client.sendSms(new SendSmsRequest({phoneNumbers:phone,signName:config.signName,templateCode:config.templateCode,templateParam:JSON.stringify({code})}));}catch{throw new DomainError('SMS_PROVIDER','短信发送失败，请稍后重试',502);}if(response.body?.code!=='OK')throw new DomainError('SMS_PROVIDER','短信服务暂未受理，请联系管理员检查签名和模板',502);}
+  async function wechat(){const config=(await get()).wechat;if(!config.enabled)throw new DomainError('WECHAT_UNCONFIGURED','微信登录尚未启用，请联系管理员',503);return config;}
+  return {configuration:async()=>safe(await get()),configure,sendSms,wechat,codeHash:async(phone:string,code:string)=>createHmac('sha256',await key()).update(phone+':'+code).digest('hex')};
+}

@@ -40,9 +40,12 @@ describe('static administrator portal',()=>{
     expect(allowed.headers.get('set-cookie')).toContain('lingfeng_session=renewed');
     expect(upstream).toHaveBeenCalledTimes(1);
     expect((await forwardAdminRequest(new Request('https://admin.example.com/api/v1/dashboard',{headers}),env)).status).toBe(200);
+    expect((await forwardAdminRequest(new Request('https://admin.example.com/api/v1/auth-services',{headers}),env)).status).toBe(200);
+    expect((await forwardAdminRequest(new Request('https://admin.example.com/api/v1/membership-admin?scope=orders&page=2&q=member',{headers}),env)).status).toBe(200);
+    expect(upstream).toHaveBeenLastCalledWith('http://127.0.0.1:3045/api/v1/membership-admin?scope=orders&page=2&q=member',expect.any(Object));
     expect((await forwardAdminRequest(new Request('https://admin.example.com/api/v1/automation',{headers}),env)).status).toBe(404);
     expect((await forwardAdminRequest(new Request('https://admin.example.com/api/v1/auth',{method:'POST',headers:{...headers,origin:'https://evil.example'},body:'{}'}),env)).status).toBe(403);
     expect((await forwardAdminRequest(new Request('https://members.example.com/api/v1/auth',{headers:{...headers,host:'members.example.com'}}),env)).status).toBe(403);
-    expect(upstream).toHaveBeenCalledTimes(2);
+    expect(upstream).toHaveBeenCalledTimes(4);
   });
 });

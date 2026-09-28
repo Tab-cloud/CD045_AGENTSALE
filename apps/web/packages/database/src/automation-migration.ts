@@ -4,8 +4,23 @@ CREATE TABLE IF NOT EXISTS app_users (
  role text NOT NULL CHECK(role IN ('admin','operator')), enabled boolean NOT NULL DEFAULT true,
  failed_attempts integer NOT NULL DEFAULT 0, locked_until text NOT NULL DEFAULT '', UNIQUE(workspace_id,username)
 );
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone text;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS wechat_app_id text;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS wechat_openid text;
+CREATE UNIQUE INDEX IF NOT EXISTS app_users_phone_unique ON app_users(workspace_id,phone) WHERE phone IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS app_users_wechat_unique ON app_users(workspace_id,wechat_app_id,wechat_openid) WHERE wechat_openid IS NOT NULL;
 CREATE TABLE IF NOT EXISTS app_sessions (
  id text PRIMARY KEY, workspace_id text NOT NULL, user_id uuid NOT NULL REFERENCES app_users(id), expires_at text NOT NULL
+);
+CREATE TABLE IF NOT EXISTS phone_challenges (
+ id uuid PRIMARY KEY, workspace_id text NOT NULL, phone text NOT NULL, purpose text NOT NULL,
+ code_hash text NOT NULL, requester_hash text NOT NULL, expires_at text NOT NULL,
+ sent_at text NOT NULL, attempts integer NOT NULL DEFAULT 0, consumed boolean NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS phone_challenges_lookup ON phone_challenges(workspace_id,phone,purpose,sent_at DESC);
+CREATE TABLE IF NOT EXISTS wechat_oauth_states (
+ id_hash text PRIMARY KEY, workspace_id text NOT NULL, user_id uuid REFERENCES app_users(id),
+ purpose text NOT NULL, expires_at text NOT NULL
 );
 CREATE TABLE IF NOT EXISTS automation_jobs (
  id uuid PRIMARY KEY, workspace_id text NOT NULL, state text NOT NULL, document jsonb NOT NULL, created_at text NOT NULL
@@ -105,7 +120,7 @@ CREATE TABLE IF NOT EXISTS commerce_records (
  UNIQUE(workspace_id,connector,record_type,external_id)
 );
 CREATE INDEX IF NOT EXISTS commerce_records_recent ON commerce_records(workspace_id,record_type,observed_at DESC);
-${['app_users','app_sessions','automation_jobs','media_assets','automation_spend','market_signals','commerce_agent_state','agent_conversations','commerce_agent_messages','agent_context_summaries','agent_memories','agent_context_runs','agent_conversation_context_summaries','agent_conversation_memories','agent_conversation_context_runs','connector_state','commerce_orders','connector_events','connector_oauth_states','commerce_records'].map(table=>`
+${['app_users','app_sessions','phone_challenges','wechat_oauth_states','automation_jobs','media_assets','automation_spend','market_signals','commerce_agent_state','agent_conversations','commerce_agent_messages','agent_context_summaries','agent_memories','agent_context_runs','agent_conversation_context_summaries','agent_conversation_memories','agent_conversation_context_runs','connector_state','commerce_orders','connector_events','connector_oauth_states','commerce_records'].map(table=>`
 GRANT SELECT,INSERT,UPDATE,DELETE ON ${table} TO agentsale_local;
 ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;

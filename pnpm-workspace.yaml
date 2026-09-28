@@ -12,6 +12,7 @@ linkWorkspacePackages: false
 verifyDepsBeforeRun: error
 enableGlobalVirtualStore: false
 allowBuilds:
+  '@alicloud/openapi-core': false
   esbuild: true
   sharp: true
   unrs-resolver: true

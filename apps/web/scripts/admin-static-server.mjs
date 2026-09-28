@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 
 const staticRoot=fileURLToPath(new URL('../admin-console/dist/',import.meta.url));
-const services=new Set(['admin','creative-config','auth','membership-admin','dashboard']);
+const services=new Set(['admin','creative-config','auth','auth-services','membership-admin','dashboard']);
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};
 const security={'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY'};
 
@@ -47,7 +47,7 @@ export async function forwardAdminRequest(request,env=process.env){
   const session=/(?:^|;\s*)lingfeng_session=([A-Za-z0-9_-]{40,100})(?:;|$)/.exec(request.headers.get('cookie')||'');
   if(session)headers.set('Cookie',`lingfeng_session=${session[1]}`);
   try{
-    const upstream=await fetch(`${base}/api/v1/${service}`,{method:request.method,headers,body,cache:'no-store',redirect:'manual'});
+    const upstream=await fetch(`${base}/api/v1/${service}${url.search}`,{method:request.method,headers,body,cache:'no-store',redirect:'manual'});
     const responseHeaders=new Headers({'Cache-Control':'no-store','Content-Type':upstream.headers.get('content-type')||'application/json'});
     for(const cookie of upstream.headers.getSetCookie())responseHeaders.append('Set-Cookie',cookie);
     return new Response(upstream.body,{status:upstream.status,headers:responseHeaders});
