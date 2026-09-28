@@ -11,6 +11,8 @@
 
 Web 端只承载账号、会员、管理员配置和 AI/API 服务接口。研究、任务编排、内容制作及成果管理在桌面端实现。旧业务 API 仅在本机迁移验证模式开放，公网部署返回 404；旧代码尚未清退。
 
+计划中的会员中心与桌面 API 公网地址为 `https://lingfeng.zailink.space`，管理员入口为 `https://admin.lingfeng.zailink.space`。部署时分别设置 `LINGFENG_PUBLIC_URL` 与 `LINGFENG_ADMIN_URL`；这只是目标域名记录，不表示 DNS、HTTPS 或服务已部署。
+
 公网部署前请按 [Web 服务部署前审核](../../docs/reports/2026-09-28-web-predeployment-review.md) 逐项验收。现阶段可部署隔离预发布环境联调；真实收费和公开注册仍有上线阻断项。
 
 从仓库根目录执行 `pnpm build` 后用 `pnpm start` 启动。3045 是唯一的 Next 服务进程，提供会员页面和接口；3047 由轻量静态服务器提供管理员页面，并只代理管理接口到 3045。两者由同一个启动器管理。`pnpm dev` 会先构建静态管理页面，修改管理页面后需重启开发进程。请通过根目录启动入口运行，以沿用原有数据目录。

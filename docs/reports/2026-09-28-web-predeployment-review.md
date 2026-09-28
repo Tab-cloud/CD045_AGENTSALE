@@ -39,14 +39,14 @@ Web 的产品职责是账号、订阅、管理员配置和 Agent 服务 API；�
 2. 为 3045、3047 分别配置 HTTPS 域名与证书。启动环境至少提供：
 
    ```sh
-   LINGFENG_PUBLIC_URL=https://members.example.com
-   LINGFENG_ADMIN_URL=https://admin.example.com
+   LINGFENG_PUBLIC_URL=https://lingfeng.zailink.space
+   LINGFENG_ADMIN_URL=https://admin.lingfeng.zailink.space
    AGENTSALE_DATA_DIR=/var/lib/lingfeng/pglite
    LINGFENG_SETUP_TOKEN=replace-with-a-random-32-byte-token
    NEXT_TELEMETRY_DISABLED=1
    ```
 
-   口令只放在服务器密钥管理或权限严格的环境文件中，不提交仓库。首次管理员建成后撤掉该环境变量并重启。`AGENTSALE_LOCAL_DEMO` 不要设置为 `1`，`LINGFENG_LEGACY_ADMIN_WORKER` 不要设置为 `1`。使用 `pnpm start` 启动；公网设置不允许 `pnpm dev`。
+   两个域名已确定，但 DNS、证书和反向代理仍需在目标服务器配置与验收。口令只放在服务器密钥管理或权限严格的环境文件中，不提交仓库。首次管理员建成后撤掉该环境变量并重启。`AGENTSALE_LOCAL_DEMO` 不要设置为 `1`，`LINGFENG_LEGACY_ADMIN_WORKER` 不要设置为 `1`。使用 `pnpm start` 启动；公网设置不允许 `pnpm dev`。
 3. 只运行一份 Web 后端实例。`/var/lib/lingfeng/pglite` 保存数据库，其同级 `/var/lib/lingfeng/automation` 保存加密密钥、服务配置、订单配置与作品。使用独立服务账号、持久卷和限制性文件权限；停写后连同两处目录一起备份并进行恢复演练。当前 PGlite/文件存储不支持多实例横向扩容。
 4. 反向代理限制请求体大小与请求频率，特别是注册、登录、初始化、支付下单、模型与媒体接口；记录结构化访问日志但不记录密码、Bearer Token、支付私钥或回调原文。提供磁盘容量、进程与错误率监控。当前应用没有网络级注册/登录限流、账号找回与管理端多因素认证。
 5. 初始化管理员后先保持两种支付渠道关闭，仅发布测试套餐并验证匿名、普通用户、管理员的权限边界、桌面登录、权益和额度。然后在商户测试环境验证真实 HTTPS 回调、主动查单、重复通知、订单金额和服务商失败恢复；正式收费前还需退款与订阅撤销流程、对账、客服处理及支付渠道合同验收。
