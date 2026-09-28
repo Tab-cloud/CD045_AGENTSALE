@@ -108,4 +108,13 @@ describe('subscription authority',()=>{
   await expect(members.consume(user.id,'model')).rejects.toThrow('会员');
   await expect(members.claimAsset(randomUUID(),user.id,'image')).rejects.toThrow('会员');
  });
+ it('saves daily quotas above the previous caps for every service',async()=>{
+  const {members,user,admin,plan}=await setup();
+  const limits={model:20000,search:20000,image:2000,video:2000};
+  await members.savePlan({...plan,limits},admin);
+  expect((await members.plans(true)).find(item=>item.id===plan.id)?.limits).toEqual(limits);
+  await members.setMembership(user.id,plan.id,new Date(Date.now()+86400000).toISOString(),'调整服务额度',admin);
+  expect((await members.status(user.id)).membership?.plan.limits).toEqual(limits);
+  await members.requireFeature(user.id,'video');
+ });
 });

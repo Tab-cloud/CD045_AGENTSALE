@@ -6,7 +6,7 @@ import { DomainError } from '@agentsale/domain';
 import type { User } from './types';
 export const featureSchema=z.enum(['model','search','image','video']);
 export type Feature=z.infer<typeof featureSchema>;
-export const planSchema=z.object({id:z.string().regex(/^[a-z0-9_-]{1,40}$/),name:z.string().trim().min(1).max(80),priceCents:z.number().int().min(1).max(1000000),days:z.number().int().min(1).max(366),published:z.boolean(),limits:z.object({model:z.number().int().min(-1).max(10000),search:z.number().int().min(-1).max(10000),image:z.number().int().min(-1).max(1000),video:z.number().int().min(-1).max(1000)}).strict()}).strict();
+export const planSchema=z.object({id:z.string().regex(/^[a-z0-9_-]{1,40}$/),name:z.string().trim().min(1).max(80),priceCents:z.number().int().min(1).max(1000000),days:z.number().int().min(1).max(366),published:z.boolean(),limits:z.object({model:z.number().int().min(-1),search:z.number().int().min(-1),image:z.number().int().min(-1),video:z.number().int().min(-1)}).strict()}).strict();
 export type Plan=z.infer<typeof planSchema>;
 type Membership={plan:Plan;expiresAt:string;status:'active'|'revoked'};
 export type Order={id:string;userId:string;plan:Plan;channel:'wechat'|'alipay';status:'pending'|'paid'|'closed';createdAt:string;transactionId?:string;paidAt?:string;closedAt?:string};
