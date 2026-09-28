@@ -4,6 +4,7 @@ import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createPayments,verifyWechat} from '../packages/automation/src/payment';
+import type {Order} from '../packages/automation/src/membership';
 const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
 const {privateKey:alipayResponsePrivateKey,publicKey:alipayPublicKey}=generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
 const wx={enabled:true,appId:'wx-test',merchantId:'merchant-test',serial:'cert-test',publicKeyId:'PUB_KEY_ID_TEST',privateKey,publicKey,apiV3Key:'12345678901234567890123456789012'};
@@ -36,6 +37,28 @@ it('reports missing Alipay setup fields and rejects the application public key i
  await expect(payments.configure({publicUrl:'https://members.example.com',wechat:{...wx,enabled:false},alipay:{...ali,merchantId:''}})).rejects.toThrow('seller_id');
  await expect(payments.configure({publicUrl:'https://members.example.com',wechat:{...wx,enabled:false},alipay:{...ali,publicKey}})).rejects.toThrow('应用公钥');
  expect((await payments.configuration()).alipay.enabled).toBe(false);
+});
+it('creates signed PC and mobile Alipay website checkout links with server-owned callbacks',async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'lingfeng-payment-'));dirs.push(root);
+ const payments=createPayments(root);
+ await payments.configure({publicUrl:'https://members.example.com',wechat:{...wx,enabled:false},alipay:ali});
+ const order:Order={id:'a'.repeat(32),userId:'user',channel:'alipay',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,search:10,image:1,video:1}}};
+ for(const [device,method,productCode] of [['pc','alipay.trade.page.pay','FAST_INSTANT_TRADE_PAY'],['mobile','alipay.trade.wap.pay','QUICK_WAP_WAY']] as const){
+   const checkout=await payments.checkout(order,device);
+   expect(checkout.kind).toBe('redirect');
+   if(checkout.kind!=='redirect')throw new Error('Expected redirect checkout');
+   const url=new URL(checkout.url);
+   expect(url.origin+url.pathname).toBe('https://openapi.alipay.com/gateway.do');
+   expect(url.searchParams.get('method')).toBe(method);
+   expect(url.searchParams.get('notify_url')).toBe('https://members.example.com/api/v1/payments/alipay');
+   expect(url.searchParams.get('return_url')).toBe('https://members.example.com/?payment=return&orderId='+order.id);
+   expect(url.searchParams.get('sign_type')).toBe('RSA2');
+   expect(url.searchParams.get('sign')).toBeTruthy();
+   const biz=JSON.parse(url.searchParams.get('biz_content')||'{}');
+   expect(biz).toMatchObject({out_trade_no:order.id,total_amount:'99.00',product_code:productCode,timeout_express:'30m'});
+   expect(biz.quit_url).toBe(device==='mobile'?'https://members.example.com/?payment=return&orderId='+order.id:undefined);
+   expect(checkout.url).not.toContain(privateKey);
+ }
 });
 it('rejects forged, old and unknown-key WeChat notifications',()=>{const body='{"test":true}',headers=signed(body);expect(()=>verifyWechat(wx,headers,body)).not.toThrow();expect(()=>verifyWechat(wx,headers,body+' ')).toThrow();expect(()=>verifyWechat(wx,signed(body,'1'),body)).toThrow();headers.set('wechatpay-serial','unknown');expect(()=>verifyWechat(wx,headers,body)).toThrow();});
 it('requires the payment callback to match the deployed member origin',async()=>{const root=await mkdtemp(path.join(tmpdir(),'lingfeng-payment-'));dirs.push(root);const old=process.env.LINGFENG_PUBLIC_URL;process.env.LINGFENG_PUBLIC_URL='https://members.example.com';try{await expect(createPayments(root).configure({publicUrl:'https://other.example.com',wechat:wx,alipay:ali})).rejects.toThrow('会员站点');}finally{if(old===undefined)delete process.env.LINGFENG_PUBLIC_URL;else process.env.LINGFENG_PUBLIC_URL=old;}});

@@ -41,7 +41,7 @@ export function PaymentEditor({initial}:{initial:PaymentConfiguration}){
     const c=draft[name],alipay=name==='alipay';
     const privateStatus=status(name,'privateKey','hasPrivateKey'),publicStatus=status(name,'publicKey','hasPublicKey');
     return <fieldset key={name}>
-      <legend>{alipay?'支付宝当面付':'微信 Native 扫码支付'} · {saved[name].enabled?'当前已启用':'当前未启用'}{c.enabled!==saved[name].enabled?' · 待保存':''}</legend>
+      <legend>{alipay?'支付宝网页支付（电脑 / 手机）':'微信 Native 扫码支付'} · {saved[name].enabled?'当前已启用':'当前未启用'}{c.enabled!==saved[name].enabled?' · 待保存':''}</legend>
       <label><input type="checkbox" checked={c.enabled} onChange={event=>change(name,'enabled',event.target.checked)}/>启用支付</label>
       <div className="billing-grid">
         <label>应用 App ID<input value={c.appId} required={c.enabled} onChange={event=>change(name,'appId',event.target.value)}/></label>
@@ -53,7 +53,7 @@ export function PaymentEditor({initial}:{initial:PaymentConfiguration}){
       <label>{alipay?'支付宝公钥（不是应用公钥）':'微信支付公钥'} <span className="payment-key-status">{publicStatus}</span>
         <textarea value={c.publicKey} required={c.enabled&&!retained(name,'hasPublicKey')} placeholder={retained(name,'hasPublicKey')?'已安全保存；留空保留':'粘贴 PEM 或原始 Base64 公钥'} onChange={event=>change(name,'publicKey',event.target.value)}/>
       </label>
-      {alipay?<p className="payment-field-help">应用公钥需上传到支付宝开放平台；这里填写支付宝开放平台返回的「支付宝公钥」，用于验证支付响应。</p>:<>
+      {alipay?<p className="payment-field-help">请在支付宝开放平台开通电脑网站支付和手机网站支付。应用公钥需上传到支付宝开放平台；这里填写支付宝开放平台返回的「支付宝公钥」，用于验证支付通知。</p>:<>
         <div className="billing-grid">
           <label>商户 API 证书序列号<input value={c.serial} required={c.enabled} onChange={event=>change(name,'serial',event.target.value)}/></label>
           <label>微信支付公钥 ID<input value={c.publicKeyId} required={c.enabled} onChange={event=>change(name,'publicKeyId',event.target.value)}/></label>
