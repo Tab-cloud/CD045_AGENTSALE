@@ -1,7 +1,7 @@
 import {beforeAll,afterAll,describe,it,expect} from 'vitest';
 import {createRepository,type Repository} from '../packages/database/src/index';
 import {createAuth} from '../packages/automation/src/auth';
-import {createMembership,type Plan} from '../packages/automation/src/membership';
+import {createMembership,planSchema,type Plan} from '../packages/automation/src/membership';
 import {sql} from 'drizzle-orm';
 import {randomUUID} from 'node:crypto';
 let repo:Repository;beforeAll(async()=>{repo=await createRepository();},30000);afterAll(async()=>repo?.close());
@@ -88,5 +88,24 @@ describe('subscription authority',()=>{
   expect((await members.ordersPage(admin,1,'','closed')).total).toBe(0);
   expect((await members.closeOrder(order.id,user.id)).status).toBe('paid');
  });
- it('enforces concurrent daily limits and charges one media reservation per id',async()=>{const {members,user,auth}=await setup();const o=await members.createOrder(user,'test','wechat');await members.settle(o.id,'wechat',100,'tx');const results=await Promise.allSettled(Array.from({length:4},()=>members.consume(user.id,'model')));expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(2);const id=randomUUID();await Promise.all([members.claimAsset(id,user.id,'image'),members.claimAsset(id,user.id,'image')]);await expect(members.claimAsset(randomUUID(),user.id,'image')).rejects.toThrow('额度');const other=await auth.register('another','test-long-password');await expect(members.ownAsset(id,other.id)).rejects.toThrow('不存在');await expect(members.order(o.id,other.id)).rejects.toThrow('不存在');});
+ it('enforces concurrent daily limits and charges one media reservation per id',async()=>{const {members,user,auth}=await setup();const o=await members.createOrder(user,'test','wechat');await members.settle(o.id,'wechat',100,'tx');const results=await Promise.allSettled(Array.from({length:4},()=>members.consume(user.id,'model')));expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(2);const id=randomUUID();await Promise.all([members.claimAsset(id,user.id,'image'),members.claimAsset(id,user.id,'image')]);await expect(members.claimAsset(randomUUID(),user.id,'image')).rejects.toThrow('额度');await expect(members.claimAsset(randomUUID(),user.id,'video')).rejects.toThrow('会员');const other=await auth.register('another','test-long-password');await expect(members.ownAsset(id,other.id)).rejects.toThrow('不存在');await expect(members.order(o.id,other.id)).rejects.toThrow('不存在');});
+ it('treats -1 as unlimited across model and media while 0 still disables a feature',async()=>{
+  const {members,user,admin,plan}=await setup();
+  const unlimited={...plan,limits:{model:-1,search:0,image:-1,video:-1}};
+  expect(planSchema.safeParse({...unlimited,limits:{...unlimited.limits,model:-2}}).success).toBe(false);
+  await members.savePlan(unlimited,admin);
+  const order=await members.createOrder(user,plan.id,'wechat');
+  await members.settle(order.id,'wechat',plan.priceCents,'unlimited-quota');
+  expect((await members.status(user.id)).features).toEqual(['model','image','video']);
+  await expect(members.requireFeature(user.id,'search')).rejects.toThrow('订阅');
+  await expect(members.consume(user.id,'search')).rejects.toThrow('会员');
+  await Promise.all(Array.from({length:5},()=>members.consume(user.id,'model')));
+  await Promise.all(Array.from({length:3},()=>members.claimAsset(randomUUID(),user.id,'image')));
+  await Promise.all(Array.from({length:2},()=>members.claimAsset(randomUUID(),user.id,'video')));
+  const usage=(await members.status(user.id)).usage;
+  expect(Object.fromEntries(usage.map(row=>[row.feature,Number(row.used)]))).toMatchObject({model:5,image:3,video:2});
+  await members.revoke(user.id,admin);
+  await expect(members.consume(user.id,'model')).rejects.toThrow('会员');
+  await expect(members.claimAsset(randomUUID(),user.id,'image')).rejects.toThrow('会员');
+ });
 });
