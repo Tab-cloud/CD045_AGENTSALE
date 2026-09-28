@@ -4,13 +4,14 @@ import {PlatformAccount,platformRequest} from './platform-account';
 
 const key='lingfeng.desktop.login';
 const valid=(value:string)=>/^[A-Za-z0-9_-]{40,100}$/.test(value);
+function clearDesktopLogin(){sessionStorage.removeItem(key);sessionStorage.removeItem(key+'.startedAt');}
 
 export function DesktopLoginReturn(){
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
     if(!params.has('wechat'))return;
-    const id=sessionStorage.getItem(key)||'';
-    if(!valid(id))return;
+    const id=sessionStorage.getItem(key)||'',startedAt=Number(sessionStorage.getItem(key+'.startedAt'));
+    if(!valid(id)||!Number.isFinite(startedAt)||Date.now()-startedAt>10*60000){clearDesktopLogin();return;}
     const target=new URL('/desktop-connect',window.location.origin);
     target.searchParams.set('request',id);
     target.searchParams.set('wechat',params.get('wechat')||'error');
@@ -24,6 +25,7 @@ export function DesktopConnect(){
   useEffect(()=>{
     const value=new URLSearchParams(window.location.search).get('request')||'';
     if(!valid(value)){setError('桌面连接链接无效，请在应用中重新发起。');return;}
+    if(sessionStorage.getItem(key)!==value)sessionStorage.setItem(key+'.startedAt',String(Date.now()));
     sessionStorage.setItem(key,value);
     setId(value);
   },[]);
@@ -32,7 +34,7 @@ export function DesktopConnect(){
     setBusy(true);setError('');
     try{
       await platformRequest('desktop-login',{action:'approve',id,code});
-      sessionStorage.removeItem(key);
+      clearDesktopLogin();
       setDone(true);
     }catch(cause){setError(String((cause as Error).message));}
     finally{setBusy(false);}
