@@ -11,7 +11,7 @@ import { createRepository,type Repository } from '../packages/database/src';
 import { defaultCosts } from '../packages/contracts/src';
 import { createAutomation } from '../packages/automation/src/engine';
 import { createMinimax } from '../packages/automation/src/minimax';
-import { modelJson,parseModelJson } from '../packages/automation/src/providers';
+import { desktopComplete,modelJson,parseModelJson } from '../packages/automation/src/providers';
 import { requestBytes,providerAddressAllowed } from '../packages/automation/src/network';
 import { defaults,type Job,type User,type SecretSettings } from '../packages/automation/src/types';
 import { command,ownedFile } from '../packages/automation/src/media';
@@ -30,7 +30,7 @@ beforeAll(async()=>{
   await command('ffmpeg',['-v','error','-f','lavfi','-i','color=c=white:s=720x1280:d=6:r=24','-c:v','libx264','-pix_fmt','yuv420p','-y',path.join(root,'source.mp4')]);video=await readFile(path.join(root,'source.mp4'));
   server=createServer((req,res)=>{let text='';req.on('data',b=>text+=b);req.on('end',()=>{const body=text?JSON.parse(text):null;calls.push({url:req.url!,body,authorization:req.headers.authorization});res.setHeader('Content-Type','application/json');const ok={base_resp:{status_code:0,status_msg:'success'}};
     if(rejected){res.end(JSON.stringify({base_resp:{status_code:1004,status_msg:'SECRET should not leak'}}));return;}
-    if(req.url==='/v1/chat/completions'){res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{"ready":true}',reasoning_details:[{text:'not content'}]}}],usage:{completion_tokens:8}}));return;}
+    if(req.url==='/v1/chat/completions'){const content=String(body.messages?.[0]?.content||'').includes('聆风研究协调 Agent')?'{"queries":[{"query":"国际新闻","country":null,"language":"zh"}],"sourceIds":[],"summary":"检索报道","gaps":[],"complete":false}':'{"ready":true}';res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content,reasoning_details:[{text:'not content'}]}}],usage:{completion_tokens:8}}));return;}
     if(req.url==='/v1/t2a_v2'){res.end(JSON.stringify({...ok,data:{audio:audio.toString('hex'),status:2},extra_info:{usage_characters:15,audio_length:2000}}));return;}
     if(req.url==='/v1/video_generation'){submitted++;res.end(JSON.stringify({...ok,task_id:'123456789012345678'}));return;}
     if(req.url?.startsWith('/v1/query/video_generation')){res.end(JSON.stringify({...ok,task_id:'123456789012345678',status:pending?'Processing':'Success',file_id:'998877665544332211'}));return;}
@@ -43,6 +43,18 @@ const provider=createMinimax((url,options)=>requestBytes(base+new URL(url).pathn
 async function setup(budget=30){const w=randomUUID(),e=createAutomation(repo,w,path.join(root,w),{minimax:provider});await e.vault.save(settings,undefined,'FIXTURE-ONLY-KEY');const p=await repo.execute(w,{type:'product.create',name:'Synthetic fixture',sku:randomUUID(),supplier:'QA only',region:'China',market:'QA',description:'Synthetic fixture only',sourceUrl:'https://example.com',costs:defaultCosts},randomUUID());const png=await sharp({create:{width:500,height:700,channels:3,background:'#ccd4dc'}}).png().toBuffer();const asset=await e.upload(p.id,'fixture.png','Synthetic QA asset',png);const script={...fixture,listing:undefined};const j=await e.store.create({kind:'render',productId:p.id,expectedVersion:1,assetId:asset.id,script,voiceover:true,videoMode:'minimax',budgetCents:budget},actor,randomUUID());return {e,w,j,asset};}
 
 it('MiniMax 文本协议分离推理，不发送未验证支持的 JSON 格式参数',async()=>{const config={...secret,baseUrl:base+'/v1',localModel:true,model:'MiniMax-M3',format:'prompt_json' as const,protocol:'minimax' as const};const result=await modelJson(config,z.object({ready:z.literal(true)}).strict(),'check','Return ready',true);expect(result.data.ready).toBe(true);const req=calls.at(-1)!;expect(req.body.reasoning_split).toBe(true);expect(req.body.thinking.type).toBe('disabled');expect(req.body.response_format).toBeUndefined();expect(req.body.messages[1].content).toContain('Required JSON schema');});
+
+it('桌面研究规划按服务商能力声明并校验完整 JSON 契约',async()=>{
+ const context={objective:'今日国际新闻',currentLocalDate:'2026-09-29'};
+ const promptOnly={...secret,baseUrl:base+'/v1',localModel:true,format:'prompt_json' as const,protocol:'minimax' as const};
+ expect(JSON.parse(await desktopComplete(promptOnly,'coordinator',context)).queries[0].query).toBe('国际新闻');
+ expect(calls.at(-1)?.body.response_format).toBeUndefined();
+ expect(calls.at(-1)?.body.messages[1].content).toContain('Required JSON schema');
+ const structured={...promptOnly,format:'json_schema' as const};
+ expect(JSON.parse(await desktopComplete(structured,'coordinator',context)).sourceIds).toEqual([]);
+ expect(calls.at(-1)?.body.response_format.json_schema.name).toBe('desktop_research_plan');
+ expect(calls.at(-1)?.body.response_format.json_schema.schema.properties.queries.items.required).toEqual(['query','country','language']);
+});
 
 it('真实协议测试：配音解码、异步视频只提交一次、恢复轮询、无凭据下载与最终混音',async()=>{const {e,w,j}=await setup(),before=submitted;await e.tick();await e.tick();await e.tick();let current=await e.store.get(j.id);expect(current.remoteVideo?.taskId).toBe('123456789012345678');pending=true;await e.tick();current=await e.store.get(j.id);expect(current.state).toBe('queued');expect(await e.tick()).toBe(false);await e.store.control(j.id,'pause',current.version,actor);expect(await e.tick()).toBe(false);current=await e.store.get(j.id);await e.store.control(j.id,'resume',current.version,actor);pending=false;
   await repo.scoped(w,tx=>tx.execute(sql`UPDATE automation_jobs SET document=document-'nextRunAt' WHERE id=${j.id}`));

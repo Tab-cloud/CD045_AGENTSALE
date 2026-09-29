@@ -145,6 +145,11 @@ export async function marketing(job:Job,config:SecretSettings){
   return result;
 }
 
+const desktopResearchPlan=z.object({
+  queries:z.array(z.object({query:z.string(),country:z.string().nullable(),language:z.string().nullable()}).strict()),
+  sourceIds:z.array(z.string()),summary:z.string(),gaps:z.array(z.string()),complete:z.boolean(),
+}).strict();
+
 /** The client supplies role/context only; provider credentials and policy stay on the Web server. */
 export async function desktopComplete(config:SecretSettings,role:string,context:Record<string,unknown>){
   const {chatPrompts,digitalHumanPrompts,creativePrompts,researchPrompts,ecommercePrompts,fileWorkPrompts}=await import('./desktop-prompts');
@@ -154,11 +159,25 @@ export async function desktopComplete(config:SecretSettings,role:string,context:
   if(!prompt)throw new FlowError('ROLE_DENIED','此 Agent 没有该模型调用权限');
   assertProvider(config,false);
   const body:Record<string,unknown>={model:config.model,messages:[{role:'system',content:prompt+(skillContext?'\n'+skillBoundary+skillContext+'\n'+skillBoundary:'')},{role:'user',content:JSON.stringify(context)}]};
+  const structuredResearch=!context.workflow&&role==='coordinator';
+  if(structuredResearch){
+    const schema=z.toJSONSchema(desktopResearchPlan);delete (schema as Record<string,unknown>).$schema;
+    if(config.format==='json_schema')body.response_format={type:'json_schema',json_schema:{name:'desktop_research_plan',strict:true,schema}};
+    else if(config.format==='json_object')body.response_format={type:'json_object'};
+    else (body.messages as {role:string;content:string}[])[1].content+='\nRequired JSON schema:\n'+JSON.stringify(schema);
+  }
   if(config.protocol==='minimax'){body.reasoning_split=true;if(config.model==='MiniMax-M3')body.thinking={type:'disabled'};}
   const response=await requestBytes(config.baseUrl.replace(/\/$/,'')+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',...(config.apiKey?{Authorization:'Bearer '+config.apiKey}:{})},body:JSON.stringify(body),local:config.localModel,trustedMiniMax:config.protocol==='minimax',timeout:120000,maxBytes:8_000_000});
   if(response.status!==200)throw new FlowError('MODEL_HTTP','模型服务暂不可用，请联系管理员检查服务额度与配置');
   const data=JSON.parse(response.body.toString()),choice=data.choices?.[0],text=choice?.message?.content;
   if(choice?.finish_reason==='length')throw new FlowError('MODEL_TRUNCATED','模型输出达到上限，请缩小任务范围');
   if(typeof text!=='string'||!text.trim()||choice?.message?.refusal)throw new FlowError('MODEL_RESPONSE','模型未返回有效内容');
-  return text.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
+  const cleaned=text.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
+  if(structuredResearch){
+    let parsed:unknown;try{parsed=parseModelJson(cleaned);}catch{throw new FlowError('MODEL_JSON','研究规划未返回单个完整 JSON 对象');}
+    const checked=desktopResearchPlan.safeParse(parsed);
+    if(!checked.success)throw new FlowError('MODEL_SCHEMA',`研究规划结构无效：${checked.error.issues.slice(0,2).map(issue=>`${issue.path.join('.')||'root'} ${issue.message}`).join('；')}`);
+    return JSON.stringify(checked.data);
+  }
+  return cleaned;
 }
