@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {DomainError} from '@agentsale/domain';
 import {session,platform} from '../../../../lib/platform';
 import {failure} from '../../../../lib/local-runtime';
 import {jsonBody} from '../../../../lib/server-access';
@@ -22,5 +23,10 @@ export async function POST(request:Request){try{
   try{
     const device=b.device||(/Android|iPhone|iPad|iPod|Mobile/i.test(request.headers.get('user-agent')||'')?'mobile':'pc');
     return Response.json({order,...await p.payments.checkout(order,device)},{headers:{'Cache-Control':'no-store'}});
-  }catch{return Response.json({message:'支付请求未确认，请查看订单记录并联系管理员。订单尚未开通会员。',order},{status:502});}
+  }catch(error){
+    // Keep provider diagnostics on the server and correlate them with the persisted order.
+    // Unexpected SDK errors may contain credentials or signed URLs, so log only their type.
+    console.error('Payment checkout failed:',{orderId:order.id,channel:order.channel,...(DomainError.is(error)?{code:error.code,status:error.status,reason:error.message}:{code:'UNEXPECTED',type:error instanceof Error?error.name:typeof error})});
+    return Response.json({code:'PAYMENT_CHECKOUT_UNCONFIRMED',message:'支付请求未确认，请查看订单记录并联系管理员。订单尚未开通会员。',order},{status:DomainError.is(error)&&error.status===503?503:502,headers:{'Cache-Control':'no-store'}});
+  }
 }catch(e){if(e instanceof z.ZodError)return Response.json({message:'请选择套餐与支付方式'},{status:400});return failure(e);}}

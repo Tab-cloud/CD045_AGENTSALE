@@ -7,6 +7,18 @@ import {randomUUID} from 'node:crypto';
 let repo:Repository;beforeAll(async()=>{repo=await createRepository();},30000);afterAll(async()=>repo?.close());
 async function setup(){const workspace=randomUUID(),auth=createAuth(repo,workspace),members=createMembership(repo,workspace),admin=await auth.create('administrator','test-long-password','admin'),user=await auth.register('member','test-long-password');const plan:Plan={id:'test',name:'测试套餐',days:30,priceCents:100,published:true,limits:{model:2,search:1,image:1,video:0}};await members.savePlan(plan,admin);return {workspace,auth,members,admin,user,plan};}
 describe('subscription authority',()=>{
+ it('keeps mixed-case plan identifiers consistent across saving and manual membership',async()=>{
+  const {members,admin,user,plan}=await setup();
+  const premium={...plan,id:'Premium',name:'聆风会员-Premium',priceCents:19900,limits:{model:80000,search:40000,image:0,video:0}};
+  expect(planSchema.safeParse(premium).success).toBe(true);
+  await members.savePlan(premium,admin);
+  expect((await members.plans(true)).find(p=>p.id==='Premium')).toMatchObject(premium);
+  const expiry=new Date(Date.now()+30*86400000).toISOString();
+  await members.setMembership(user.id,'Premium',expiry,'人工开通测试',admin);
+  expect((await members.status(user.id)).membership?.plan.id).toBe('Premium');
+  await expect(members.savePlan({...premium,id:'bad id'},admin)).rejects.toThrow('套餐标识');
+  await expect(members.savePlan({...premium,limits:{...premium.limits,model:-2}},admin)).rejects.toThrow('模型调用每日额度');
+ });
  it('lets administrators set a member plan and expiry without recording a payment',async()=>{
   const {workspace,members,admin,user,plan}=await setup();
   const firstExpiry=new Date(Date.now()+10*86400000).toISOString();

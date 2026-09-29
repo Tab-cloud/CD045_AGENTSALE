@@ -6,7 +6,8 @@ import { DomainError } from '@agentsale/domain';
 import type { User } from './types';
 export const featureSchema=z.enum(['model','search','image','video']);
 export type Feature=z.infer<typeof featureSchema>;
-export const planSchema=z.object({id:z.string().regex(/^[a-z0-9_-]{1,40}$/),name:z.string().trim().min(1).max(80),priceCents:z.number().int().min(1).max(1000000),days:z.number().int().min(1).max(366),published:z.boolean(),limits:z.object({model:z.number().int().min(-1),search:z.number().int().min(-1),image:z.number().int().min(-1),video:z.number().int().min(-1)}).strict()}).strict();
+export const planIdSchema=z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
+export const planSchema=z.object({id:planIdSchema,name:z.string().trim().min(1).max(80),priceCents:z.number().int().min(1).max(1000000),days:z.number().int().min(1).max(366),published:z.boolean(),limits:z.object({model:z.number().int().min(-1),search:z.number().int().min(-1),image:z.number().int().min(-1),video:z.number().int().min(-1)}).strict()}).strict();
 export type Plan=z.infer<typeof planSchema>;
 type Membership={plan:Plan;expiresAt:string;status:'active'|'revoked'};
 export type Order={id:string;userId:string;plan:Plan;channel:'wechat'|'alipay';status:'pending'|'paid'|'closed';createdAt:string;transactionId?:string;paidAt?:string;closedAt?:string};
@@ -53,7 +54,7 @@ export function createMembership(repo:Repository,workspace:string){
       return {page,pageSize,total,orders:rows.map(row=>({...(row.document as Order),username:String(row.username),phone:row.phone?String(row.phone):null}))};
     });
   }
-  async function savePlan(raw:unknown,actor:User){admin(actor);const p=planSchema.parse(raw);await repo.scoped(workspace,async tx=>{await tx.execute(sql`INSERT INTO membership_plans VALUES(${p.id},${workspace},${JSON.stringify(p)}::jsonb) ON CONFLICT(workspace_id,id) DO UPDATE SET document=excluded.document`);await audit(tx,'membership.plan',p.id,actor.id);});return p;}
+  async function savePlan(raw:unknown,actor:User){admin(actor);const result=planSchema.safeParse(raw);if(!result.success){const field=result.error.issues[0]?.path.join('.');const labels:Record<string,string>={id:'套餐标识仅支持 1–40 位英文字母、数字、下划线和短横线',name:'套餐名称需为 1–80 字',priceCents:'价格需为 0.01–10000 元',days:'有效天数需为 1–366 天','limits.model':'模型调用每日额度','limits.search':'网页与知识库检索每日额度','limits.image':'图片生成每日额度','limits.video':'视频生成每日额度'};throw new DomainError('PLAN_INVALID',field?.startsWith('limits.')?`${labels[field]||'每日额度'}需为 -1 或非负整数`:labels[field]||'套餐字段无效，请检查填写内容',400);}const p=result.data;await repo.scoped(workspace,async tx=>{await tx.execute(sql`INSERT INTO membership_plans VALUES(${p.id},${workspace},${JSON.stringify(p)}::jsonb) ON CONFLICT(workspace_id,id) DO UPDATE SET document=excluded.document`);await audit(tx,'membership.plan',p.id,actor.id);});return p;}
   type Tx=Parameters<Parameters<Repository['scoped']>[1]>[0];
   async function audit(tx:Tx,action:string,id:string,actor:string){await tx.execute(sql`INSERT INTO audit VALUES(${randomUUID()},${workspace},${action},${id},${'操作者 '+actor},${new Date().toISOString()})`);}
   async function setMembership(userId:string,planId:string,expiresAt:string,reason:string,actor:User){
