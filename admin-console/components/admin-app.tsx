@@ -42,7 +42,7 @@ export function AdminApp({operatorUrl}:{operatorUrl:string}){
 
   return <PlatformAccount admin>{(user,logout)=><div className="admin-shell">
     <aside className="admin-sidebar">
-      <a className="admin-brand" href="#overview" aria-label="聆风管理控制台首页"><img src="/brand/lingfeng-logo.png" alt="" width={38} height={38}/><span>聆风<small>管理控制台</small></span></a>
+      <a className="admin-brand" href="#overview" aria-label="聆风 AI 管理控制台首页"><img src="/brand/lingfeng-logo.png" alt="" width={38} height={38}/><span>聆风 AI<small>管理控制台</small></span></a>
       <div className="admin-nav-caption">工作区</div>
       <nav aria-label="管理导航">{sections.map(section=><a key={section.id} href={'#'+section.id} aria-current={activeSection===section.id?'page':undefined} onClick={()=>setActiveSection(section.id)}><span className="admin-nav-number">{section.number}</span>{section.label}<span className="admin-nav-arrow" aria-hidden="true">↗</span></a>)}</nav>
       <div className="admin-boundary"><span className="admin-boundary-dot"/>仅管理员可修改平台配置。创作任务在桌面端完成。</div>
@@ -50,7 +50,7 @@ export function AdminApp({operatorUrl}:{operatorUrl:string}){
     <div className="admin-content">
       <header className="admin-topbar"><div className="admin-breadcrumb"><span>工作区</span><span aria-hidden="true">/</span><strong>{active.label}</strong></div><div className="admin-top-actions"><span className="admin-user" title="当前账号"><span aria-hidden="true">{user.username.slice(0,1).toUpperCase()}</span>{user.username}</span><button type="button" className="admin-header-button" onClick={toggle} aria-label={dark?'切换浅色外观':'切换深色外观'}>{dark?'浅色外观':'深色外观'}</button><button type="button" className="admin-header-button" onClick={logout}>退出登录</button></div></header>
       <main>
-        <div className="page-heading"><div><span className="portal-label">LINGFENG · PLATFORM</span><h1>{active.title}</h1><p>{active.description}</p></div><a className="btn secondary" href={operatorUrl}>打开会员中心 <span aria-hidden="true">↗</span></a></div>
+        <div className="page-heading"><div><span className="portal-label">LINGFENG AI · PLATFORM</span><h1>{active.title}</h1><p>{active.description}</p></div><a className="btn secondary" href={operatorUrl}>打开会员中心 <span aria-hidden="true">↗</span></a></div>
         {activeSection==='overview'&&<OverviewDashboard/>}
         {activeSection==='membership'&&<BillingSettings/>}
         {activeSection==='users'&&<MemberUsers/>}
@@ -58,7 +58,7 @@ export function AdminApp({operatorUrl}:{operatorUrl:string}){
         {activeSection==='auth-services'&&<AuthServicesEditor/>}
         {activeSection==='services'&&<AdminPanel/>}
         {activeSection==='creative'&&<CreativeSettings/>}
-        <footer>聆风管理控制台 <span>配置修改保留审计记录</span></footer>
+        <footer>聆风 AI 管理控制台 <span>配置修改保留审计记录</span></footer>
       </main>
     </div>
   </div>}</PlatformAccount>;

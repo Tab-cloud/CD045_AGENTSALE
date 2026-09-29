@@ -50,7 +50,7 @@ export function createPayments(root:string,transport:typeof requestBytes=request
     if(!c[order.channel].enabled)throw new DomainError('PAYMENT_UNCONFIGURED','管理员尚未启用此支付方式',503);
     const expiresAt=new Date(Date.now()+30*60000).toISOString();
     if(order.channel==='wechat'){
-      const data=await wx(c.wechat,'/v3/pay/transactions/native',{appid:c.wechat.appId,mchid:c.wechat.merchantId,description:'聆风 · '+order.plan.name,out_trade_no:order.id,time_expire:expiresAt,notify_url:c.publicUrl+'/api/v1/payments/wechat',amount:{total:order.plan.priceCents,currency:'CNY'}});
+      const data=await wx(c.wechat,'/v3/pay/transactions/native',{appid:c.wechat.appId,mchid:c.wechat.merchantId,description:'聆风 AI · '+order.plan.name,out_trade_no:order.id,time_expire:expiresAt,notify_url:c.publicUrl+'/api/v1/payments/wechat',amount:{total:order.plan.priceCents,currency:'CNY'}});
       if(typeof data.code_url!=='string'||!data.code_url.startsWith('weixin://'))throw rejected();
       return {kind:'qr' as const,qr:await QRCode.toDataURL(data.code_url,{width:280,margin:2}),expiresAt};
     }
@@ -60,7 +60,7 @@ export function createPayments(root:string,transport:typeof requestBytes=request
     const url=alipay(c.alipay).pageExecute(method,'GET',{
       notifyUrl:c.publicUrl+'/api/v1/payments/alipay',
       returnUrl,
-      bizContent:{outTradeNo:order.id,totalAmount:(order.plan.priceCents/100).toFixed(2),subject:'聆风 · '+order.plan.name,productCode:mobile?'QUICK_WAP_WAY':'FAST_INSTANT_TRADE_PAY',timeoutExpress:'30m',...(mobile?{quitUrl:returnUrl}:{})},
+      bizContent:{outTradeNo:order.id,totalAmount:(order.plan.priceCents/100).toFixed(2),subject:'聆风 AI · '+order.plan.name,productCode:mobile?'QUICK_WAP_WAY':'FAST_INSTANT_TRADE_PAY',timeoutExpress:'30m',...(mobile?{quitUrl:returnUrl}:{})},
     });
     const gateway=new URL(url);
     if(gateway.protocol!=='https:'||gateway.hostname!=='openapi.alipay.com'||gateway.pathname!=='/gateway.do'||gateway.searchParams.get('method')!==method)throw new DomainError('PAYMENT_PROVIDER','无法生成支付宝收银台地址，请管理员核对商户配置',502);

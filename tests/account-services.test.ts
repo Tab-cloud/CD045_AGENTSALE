@@ -7,10 +7,17 @@ import {tmpdir} from 'node:os';
 import {createRepository,type Repository} from '../packages/database/src/index';
 import {createAuth} from '../packages/automation/src/auth';
 import {createMembership} from '../packages/automation/src/membership';
-import {createAuthServices} from '../console/lib/auth-services';
+import {createAuthServices,smsProviderError} from '../console/lib/auth-services';
 let repo:Repository;let root:string;
 beforeAll(async()=>{repo=await createRepository();root=await mkdtemp(path.join(tmpdir(),'lingfeng-auth-services-'));},30000);
 afterAll(async()=>{await repo?.close();await rm(root,{recursive:true,force:true});});
+it('reports Aliyun frequency controls as retryable limits without inventing a daily reset',()=>{
+  const limited=smsProviderError('isv.BUSINESS_LIMIT_CONTROL');
+  expect(limited).toMatchObject({code:'SMS_PROVIDER_LIMIT',status:429});
+  expect(limited.message).toContain('频率限制');
+  expect(limited.message).not.toContain('明天');
+  expect(smsProviderError('isv.AMOUNT_NOT_ENOUGH')).toMatchObject({code:'SMS_PROVIDER',status:502});
+});
 describe('phone registration and WeChat account binding',()=>{
   it('requires a delivered one-time code, limits retries, and keeps membership on the same user',async()=>{
     const workspace=randomUUID(),auth=createAuth(repo,workspace),members=createMembership(repo,workspace),admin=await auth.create('owner','very-long-password','admin'),services=createAuthServices(root),phone='13800138000',hash=services.codeHash;let delivered='';

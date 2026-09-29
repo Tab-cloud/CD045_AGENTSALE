@@ -7,7 +7,7 @@ type Feature='model'|'image'|'video'|'audio';
 type Plan={id:string;name:string;priceCents:number;days:number;published:boolean;limits:Record<Feature,number>};
 type PlanDraft={id:string;name:string;price:string;days:string;published:boolean;limits:Record<Feature,string>};
 type Data={plans:Plan[];payment:PaymentConfiguration};
-const initial:Plan={id:'standard',name:'聆风会员',priceCents:0,days:30,published:false,limits:{model:40,image:5,video:2,audio:0}};
+const initial:Plan={id:'standard',name:'聆风 AI 会员',priceCents:0,days:30,published:false,limits:{model:40,image:5,video:2,audio:0}};
 const features=[['model','文本模型调用'],['image','图片生成'],['video','视频生成'],['audio','音频模型调用']] as const;
 const editPlan=(plan:Plan):PlanDraft=>({...plan,price:String(plan.priceCents/100),days:String(plan.days),limits:{model:String(plan.limits.model),image:String(plan.limits.image),video:String(plan.limits.video),audio:String(plan.limits.audio??0)}});
 

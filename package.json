@@ -1,5 +1,6 @@
 {
   "name": "lingfeng-web",
+  "description": "聆风 AI Web 服务",
   "version": "0.1.0",
   "private": true,
   "type": "module",
