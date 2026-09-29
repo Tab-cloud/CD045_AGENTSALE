@@ -91,17 +91,18 @@ export function parseNewsRss(xml:string,asOf=new Date()):WebSearchHit[]{
   }catch{}});
   return hits.slice(0,12);
 }
-export async function newsSearch(query:string,config:SecretSettings,locale:SearchLocale={}):Promise<WebSearchHit[]>{
-  const feeds=['https://www.theguardian.com/world/rss','https://feeds.bbci.co.uk/news/world/rss.xml'];
+export async function newsSearch(_query:string,config:SecretSettings,_locale:SearchLocale={},transport:typeof requestBytes=requestBytes):Promise<WebSearchHit[]>{
+  const feeds=['https://www.theguardian.com/world/rss','https://feeds.bbci.co.uk/news/world/rss.xml','https://feeds.skynews.com/feeds/rss/world.xml'];
   const results=await Promise.allSettled(feeds.map(async feed=>{
-    const response=await requestBytes(feed,{headers:{Accept:'application/rss+xml, application/xml;q=0.9'},timeout:12000,maxBytes:512_000});
+    const response=await transport(feed,{headers:{Accept:'application/rss+xml, application/xml;q=0.9'},timeout:12000,maxBytes:512_000});
     return response.status===200?parseNewsRss(response.body.toString()):[];
   }));
   const byFeed=results.map(result=>result.status==='fulfilled'?result.value:[]),combined:WebSearchHit[]=[];
   for(let index=0;combined.length<6&&byFeed.some(feed=>feed.length>index);index++)for(const feed of byFeed){
     const hit=feed[index];if(hit&&!combined.some(existing=>existing.url===hit.url)&&allowedHit(new URL(hit.url),config.allowedDomains))combined.push(hit);
   }
-  return combined.length?combined.slice(0,6):webSearch(query,config,locale);
+  if(!combined.length)throw new FlowError('NEWS_SOURCE_UNAVAILABLE','近期新闻订阅源暂不可用，无法可靠生成当天新闻摘要，请稍后重试',true);
+  return combined.slice(0,6);
 }
 export async function searchSuppliers(query:string,config:SecretSettings){return (await webSearch(query,config)).map(hit=>hit.url).slice(0,5);}
 const normalize=(s:string)=>s.replace(/\s+/g,' ').trim();
