@@ -3,8 +3,8 @@ import {useEffect,useState} from 'react';
 import type {DashboardSummary} from '../../packages/automation/src/membership';
 
 const money=(cents:number)=>new Intl.NumberFormat('zh-CN',{style:'currency',currency:'CNY'}).format(cents/100);
-const featureNames={model:'模型调用',search:'网页与知识库检索',image:'图片生成',video:'视频生成'};
-type DashboardView=DashboardSummary&{services:{model:string;search:string;image:boolean;video:boolean;wechat:boolean;alipay:boolean;creativeAvailable:boolean;paymentAvailable:boolean}};
+const featureNames={model:'文本模型调用',image:'图片生成',video:'视频生成',audio:'音频模型调用'};
+type DashboardView=DashboardSummary&{services:{model:string;image:boolean;video:boolean;wechat:boolean;alipay:boolean;creativeAvailable:boolean;paymentAvailable:boolean}};
 
 export function OverviewDashboard(){
   const [summary,setSummary]=useState<DashboardView|null>(null);
@@ -55,7 +55,6 @@ export function OverviewDashboard(){
       <article className="overview-card overview-services"><div className="overview-card-heading"><div><h3>服务状态</h3><p>配置摘要；实际可用性以连接验证和服务商响应为准</p></div></div>
         <div className="overview-service-grid">
           <div><span>文本模型</span><strong>{summary.services.model}</strong><a href="#services">查看配置</a></div>
-          <div><span>网页检索</span><strong>{summary.services.search}</strong><a href="#services">查看配置</a></div>
           <div><span>图片 / 视频</span><strong>{summary.services.creativeAvailable?`${summary.services.image?'图片已启用':'图片未启用'} · ${summary.services.video?'视频已启用':'视频未启用'}`:'状态暂不可用'}</strong><a href="#creative">查看配置</a></div>
           <div><span>微信 / 支付宝</span><strong>{summary.services.paymentAvailable?`${summary.services.wechat?'微信已启用':'微信未启用'} · ${summary.services.alipay?'支付宝已启用':'支付宝未启用'}`:'状态暂不可用'}</strong><a href="#membership">查看配置</a></div>
         </div>

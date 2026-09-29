@@ -18,32 +18,15 @@ describe('production startup boundaries',()=>{
   it('keeps local development available without public configuration',()=>expect(productionConfig({},root)).toBeNull());
 });
 
-describe('public OAuth return',()=>{
-  const old=process.env.LINGFENG_ADMIN_URL;
-  afterAll(()=>{if(old===undefined)delete process.env.LINGFENG_ADMIN_URL;else process.env.LINGFENG_ADMIN_URL=old;});
-  it('returns denied authorization to the configured admin origin',async()=>{
-    process.env.LINGFENG_ADMIN_URL='https://admin.example.com';
-    const {GET}=await import('../console/app/api/v1/oauth/[connector]/callback/route');
-    const result=await GET(new Request('https://members.example.com/api/v1/oauth/temu/callback?error=denied'),{params:Promise.resolve({connector:'temu'})});
-    expect(result.status).toBe(302);expect(result.headers.get('location')).toBe('https://admin.example.com/?oauth=denied&connector=temu');
-  });
-});
-
-describe('connector webhook body limit',()=>{
-  it('rejects oversized events before opening the automation store',async()=>{
-    const {POST}=await import('../console/app/api/v1/webhooks/[connector]/route');
-    const result=await POST(new Request('http://127.0.0.1:3045/api/v1/webhooks/temu',{method:'POST',body:'x'.repeat(1_000_001)}),{params:Promise.resolve({connector:'temu'})});
-    expect(result.status).toBe(413);
-  });
-});
-
 describe('public data initialization',()=>{
   let root:string;const oldData=process.env.AGENTSALE_DATA_DIR,oldPublic=process.env.LINGFENG_PUBLIC_URL,oldDemo=process.env.AGENTSALE_LOCAL_DEMO;
   beforeAll(async()=>{root=await mkdtemp(path.join(tmpdir(),'lingfeng-public-init-'));process.env.AGENTSALE_DATA_DIR=path.join(root,'pglite');process.env.LINGFENG_PUBLIC_URL='https://members.example.com';process.env.AGENTSALE_LOCAL_DEMO='0';});
   afterAll(async()=>{const {getRepository}=await import('../console/lib/local-runtime');await (await getRepository()).close();await rm(root,{recursive:true,force:true});for(const [key,value] of [['AGENTSALE_DATA_DIR',oldData],['LINGFENG_PUBLIC_URL',oldPublic],['AGENTSALE_LOCAL_DEMO',oldDemo]] as const){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
-  it('creates empty production tables without inserting demo products',async()=>{
+  it('creates only account, billing and model tables for a new deployment',async()=>{
     const {getRepository}=await import('../console/lib/local-runtime');
-    const {LOCAL_WORKSPACE}=await import('@agentsale/database');
-    expect((await (await getRepository()).snapshot(LOCAL_WORKSPACE)).products).toHaveLength(0);
+    const rows=(await (await getRepository()).db.$client.query("SELECT tablename FROM pg_tables WHERE schemaname='public'")).rows;
+    const names=rows.map(row=>String(row.tablename));
+    for(const table of ['app_users','membership_plans','model_requests','audit'])expect(names).toContain(table);
+    for(const table of ['products','automation_jobs','knowledge_libraries','commerce_orders'])expect(names).not.toContain(table);
   });
 });

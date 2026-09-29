@@ -4,10 +4,10 @@ import { z } from 'zod';
 import type { Repository } from '@agentsale/database';
 import { DomainError } from '@agentsale/domain';
 import type { User } from './types';
-export const featureSchema=z.enum(['model','search','image','video']);
+export const featureSchema=z.enum(['model','image','video','audio']);
 export type Feature=z.infer<typeof featureSchema>;
 export const planIdSchema=z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
-export const planSchema=z.object({id:planIdSchema,name:z.string().trim().min(1).max(80),priceCents:z.number().int().min(1).max(1000000),days:z.number().int().min(1).max(366),published:z.boolean(),limits:z.object({model:z.number().int().min(-1),search:z.number().int().min(-1),image:z.number().int().min(-1),video:z.number().int().min(-1)}).strict()}).strict();
+export const planSchema=z.object({id:planIdSchema,name:z.string().trim().min(1).max(80),priceCents:z.number().int().min(1).max(1000000),days:z.number().int().min(1).max(366),published:z.boolean(),limits:z.object({model:z.number().int().min(-1),image:z.number().int().min(-1),video:z.number().int().min(-1),audio:z.number().int().min(-1).optional()}).strict()}).strict();
 export type Plan=z.infer<typeof planSchema>;
 type Membership={plan:Plan;expiresAt:string;status:'active'|'revoked'};
 export type Order={id:string;userId:string;plan:Plan;channel:'wechat'|'alipay';status:'pending'|'paid'|'closed';createdAt:string;transactionId?:string;paidAt?:string;closedAt?:string};
@@ -25,8 +25,31 @@ export function createMembership(repo:Repository,workspace:string){
   const read=async(userId:string)=>repo.scoped(workspace,async tx=>(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${userId}`)).rows[0]?.document as Membership|undefined);
   async function status(userId:string){const membership=await read(userId);const active=!!membership&&membership.status==='active'&&Date.parse(membership.expiresAt)>Date.now();const usage=await repo.scoped(workspace,async tx=>(await tx.execute(sql`SELECT feature,count(*)::int AS used FROM service_usage WHERE user_id=${userId} AND day=${day()} GROUP BY feature`)).rows);return {active,membership:membership||null,features:featureSchema.options.filter(f=>active&&includesFeature(membership!.plan.limits[f])),usage};}
   async function requireFeature(userId:string,feature:Feature){const value=await status(userId);if(!value.features.includes(feature))throw new DomainError('SUBSCRIPTION_REQUIRED','请订阅包含此服务的会员套餐，或续费已到期的会员',403);return value;}
-  // Reserve before upstream calls. Failed/unknown submissions also count; never automatically repeat paid generation.
-  async function consume(userId:string,feature:Feature){await repo.scoped(workspace,async tx=>{await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);const m=(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${userId}`)).rows[0]?.document as Membership|undefined;const limit=m?.plan.limits[feature];if(!m||m.status!=='active'||Date.parse(m.expiresAt)<=Date.now()||!includesFeature(limit))throw new DomainError('SUBSCRIPTION_REQUIRED','会员未开通此服务或已到期',403);if(limit!==-1){const used=Number((await tx.execute(sql`SELECT count(*) AS n FROM service_usage WHERE user_id=${userId} AND feature=${feature} AND day=${day()}`)).rows[0].n);if(used>=limit)throw new DomainError('QUOTA_EXCEEDED','今日服务额度已用完，请明日再试',429);}await tx.execute(sql`INSERT INTO service_usage VALUES(${randomUUID()},${workspace},${userId},${feature},${day()})`);});}
+  async function claimModelRequest(id:string,userId:string,inputHash:string,capability:'text.generate'|'image.generate'|'image.edit'|'video.generate'|'audio.speech'='text.generate'){return repo.scoped(workspace,async tx=>{
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+    await tx.execute(sql`UPDATE model_requests SET result=NULL WHERE result IS NOT NULL AND updated_at<now()-interval '7 days'`);
+    const existing=(await tx.execute(sql`SELECT user_id,input_hash,capability,status,result FROM model_requests WHERE id=${id}`)).rows[0];
+    if(existing){
+      if(existing.user_id!==userId||existing.input_hash!==inputHash||existing.capability!==capability)throw new DomainError('MODEL_REQUEST_CONFLICT','同一模型请求编号不能用于不同内容',409);
+      return {created:false,status:String(existing.status),result:existing.result as Record<string,unknown>|null};
+    }
+    const m=(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${userId}`)).rows[0]?.document as Membership|undefined;
+    const feature:Feature=capability==='text.generate'?'model':capability==='image.generate'||capability==='image.edit'?'image':capability==='video.generate'?'video':'audio';
+    const limit=m?.plan.limits[feature];
+    if(!m||m.status!=='active'||Date.parse(m.expiresAt)<=Date.now()||!includesFeature(limit))throw new DomainError('SUBSCRIPTION_REQUIRED','会员未开通模型服务或已到期',403);
+    if(limit!==-1){const used=Number((await tx.execute(sql`SELECT count(*) AS n FROM service_usage WHERE user_id=${userId} AND feature=${feature} AND day=${day()}`)).rows[0].n);if(used>=limit)throw new DomainError('QUOTA_EXCEEDED','今日模型额度已用完',429);}
+    await tx.execute(sql`INSERT INTO model_requests (id,workspace_id,user_id,capability,input_hash,status) VALUES (${id},${workspace},${userId},${capability},${inputHash},'submitting')`);
+    await tx.execute(sql`INSERT INTO service_usage VALUES(${randomUUID()},${workspace},${userId},${feature},${day()})`);
+    return {created:true,status:'submitting',result:null};
+  });}
+  async function finishModelRequest(id:string,userId:string,result:Record<string,unknown>|null,status:'completed'|'processing'|'unknown'|'failed'=result?'completed':'unknown'){await repo.scoped(workspace,async tx=>{
+    await tx.execute(sql`UPDATE model_requests SET status=${status},result=${result?JSON.stringify(result):null}::jsonb,updated_at=now() WHERE id=${id} AND user_id=${userId} AND status IN ('submitting','processing')`);
+  });}
+  async function modelRequest(id:string,userId:string){return repo.scoped(workspace,async tx=>{
+    const row=(await tx.execute(sql`SELECT capability,status,result FROM model_requests WHERE id=${id} AND user_id=${userId}`)).rows[0];
+    if(!row)throw new DomainError('NOT_FOUND','模型请求不存在',404);
+    return {capability:String(row.capability),status:String(row.status),result:row.result as Record<string,unknown>|null};
+  });}
   async function plans(all=false){return repo.scoped(workspace,async tx=>(await tx.execute(sql`SELECT document FROM membership_plans ORDER BY id`)).rows.map(r=>r.document as Plan).filter(p=>all||p.published));}
   async function usersPage(actor:User,page:number,query:string){
     admin(actor);
@@ -54,7 +77,7 @@ export function createMembership(repo:Repository,workspace:string){
       return {page,pageSize,total,orders:rows.map(row=>({...(row.document as Order),username:String(row.username),phone:row.phone?String(row.phone):null}))};
     });
   }
-  async function savePlan(raw:unknown,actor:User){admin(actor);const result=planSchema.safeParse(raw);if(!result.success){const field=result.error.issues[0]?.path.join('.');const labels:Record<string,string>={id:'套餐标识仅支持 1–40 位英文字母、数字、下划线和短横线',name:'套餐名称需为 1–80 字',priceCents:'价格需为 0.01–10000 元',days:'有效天数需为 1–366 天','limits.model':'模型调用每日额度','limits.search':'网页与知识库检索每日额度','limits.image':'图片生成每日额度','limits.video':'视频生成每日额度'};throw new DomainError('PLAN_INVALID',field?.startsWith('limits.')?`${labels[field]||'每日额度'}需为 -1 或非负整数`:labels[field]||'套餐字段无效，请检查填写内容',400);}const p=result.data;await repo.scoped(workspace,async tx=>{await tx.execute(sql`INSERT INTO membership_plans VALUES(${p.id},${workspace},${JSON.stringify(p)}::jsonb) ON CONFLICT(workspace_id,id) DO UPDATE SET document=excluded.document`);await audit(tx,'membership.plan',p.id,actor.id);});return p;}
+  async function savePlan(raw:unknown,actor:User){admin(actor);const result=planSchema.safeParse(raw);if(!result.success){const field=result.error.issues[0]?.path.join('.');const labels:Record<string,string>={id:'套餐标识仅支持 1–40 位英文字母、数字、下划线和短横线',name:'套餐名称需为 1–80 字',priceCents:'价格需为 0.01–10000 元',days:'有效天数需为 1–366 天','limits.model':'模型调用每日额度','limits.image':'图片生成每日额度','limits.video':'视频生成每日额度','limits.audio':'音频模型每日额度'};throw new DomainError('PLAN_INVALID',field?.startsWith('limits.')?`${labels[field]||'每日额度'}需为 -1 或非负整数`:labels[field]||'套餐字段无效，请检查填写内容',400);}const p=result.data;await repo.scoped(workspace,async tx=>{await tx.execute(sql`INSERT INTO membership_plans VALUES(${p.id},${workspace},${JSON.stringify(p)}::jsonb) ON CONFLICT(workspace_id,id) DO UPDATE SET document=excluded.document`);await audit(tx,'membership.plan',p.id,actor.id);});return p;}
   type Tx=Parameters<Parameters<Repository['scoped']>[1]>[0];
   async function audit(tx:Tx,action:string,id:string,actor:string){await tx.execute(sql`INSERT INTO audit VALUES(${randomUUID()},${workspace},${action},${id},${'操作者 '+actor},${new Date().toISOString()})`);}
   async function setMembership(userId:string,planId:string,expiresAt:string,reason:string,actor:User){
@@ -123,7 +146,5 @@ export function createMembership(repo:Repository,workspace:string){
   }
   // Only called after payment-provider signature and merchant validation. Atomic and replay-safe.
   async function settle(id:string,channel:Order['channel'],cents:number,transactionId:string){return repo.scoped(workspace,async tx=>{await tx.execute(sql`SELECT pg_advisory_xact_lock(450211)`);const row=(await tx.execute(sql`SELECT document FROM membership_orders WHERE id=${id} FOR UPDATE`)).rows[0];const o=row?.document as Order|undefined;if(!o||o.channel!==channel||o.plan.priceCents!==cents||!transactionId)throw new DomainError('PAYMENT_MISMATCH','支付订单校验失败',400);if(o.status==='paid'){if(o.transactionId!==transactionId)throw new DomainError('PAYMENT_MISMATCH','支付流水不匹配',400);return o;}const m=(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${o.userId} FOR UPDATE`)).rows[0]?.document as Membership|undefined;const base=m?.status==='active'?Math.max(Date.now(),Date.parse(m.expiresAt)):Date.now();const next:Membership={plan:o.plan,status:'active',expiresAt:new Date(base+o.plan.days*86400000).toISOString()};o.status='paid';delete o.closedAt;o.transactionId=transactionId;o.paidAt=new Date().toISOString();await tx.execute(sql`INSERT INTO memberships VALUES(${o.userId},${workspace},${JSON.stringify(next)}::jsonb) ON CONFLICT(user_id) DO UPDATE SET document=excluded.document WHERE memberships.workspace_id=${workspace}`);await tx.execute(sql`UPDATE membership_orders SET status='paid',document=${JSON.stringify(o)}::jsonb WHERE id=${id}`);await audit(tx,'membership.paid',id,channel);return o;});}
-  async function ownAsset(id:string,userId:string,kind?:'image'|'video'){return repo.scoped(workspace,async tx=>{if(kind)await tx.execute(sql`INSERT INTO service_assets VALUES(${id},${workspace},${userId},${kind}) ON CONFLICT DO NOTHING`);const row=(await tx.execute(sql`SELECT user_id,kind FROM service_assets WHERE id=${id}`)).rows[0];if(!row||row.user_id!==userId||kind&&row.kind!==kind)throw new DomainError('NOT_FOUND','作品不存在',404);return row.kind as 'image'|'video';});}
-  async function claimAsset(id:string,userId:string,kind:'image'|'video'){await repo.scoped(workspace,async tx=>{await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);const existing=(await tx.execute(sql`SELECT user_id,kind FROM service_assets WHERE id=${id}`)).rows[0];if(existing){if(existing.user_id!==userId||existing.kind!==kind)throw new DomainError('NOT_FOUND','作品不存在',404);return;}const m=(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${userId}`)).rows[0]?.document as Membership|undefined;const limit=m?.plan.limits[kind];if(!m||m.status!=='active'||Date.parse(m.expiresAt)<=Date.now()||!includesFeature(limit))throw new DomainError('SUBSCRIPTION_REQUIRED','会员未开通此服务或已到期',403);if(limit!==-1){const used=Number((await tx.execute(sql`SELECT count(*) AS n FROM service_usage WHERE user_id=${userId} AND feature=${kind} AND day=${day()}`)).rows[0].n);if(used>=limit)throw new DomainError('QUOTA_EXCEEDED','今日创作额度已用完',429);}await tx.execute(sql`INSERT INTO service_assets VALUES(${id},${workspace},${userId},${kind})`);await tx.execute(sql`INSERT INTO service_usage VALUES(${randomUUID()},${workspace},${userId},${kind},${day()})`);});}
-  return {status,requireFeature,consume,plans,usersPage,ordersPage,savePlan,setMembership,revoke,createOrder,closeOrder,order,orders,dashboard,settle,ownAsset,claimAsset};
+  return {status,requireFeature,claimModelRequest,finishModelRequest,modelRequest,plans,usersPage,ordersPage,savePlan,setMembership,revoke,createOrder,closeOrder,order,orders,dashboard,settle};
 }

@@ -1,14 +1,17 @@
-import { mkdir,readFile,writeFile,rename } from 'node:fs/promises';
+import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
-import { randomBytes,randomUUID,createCipheriv,createDecipheriv } from 'node:crypto';
-import { DomainError } from '@agentsale/domain';
-import { defaults,settingsSchema,FlowError,emptyConnectorSecrets,type ConnectorSecrets,type SecretSettings,type PublicSettings } from './types';
+import {spawn} from 'node:child_process';
+import {randomBytes,randomUUID,createCipheriv,createDecipheriv} from 'node:crypto';
+import {DomainError} from '@agentsale/domain';
+import {defaults,settingsSchema,FlowError,type SecretSettings,type PublicSettings} from './types';
 
-export function safeSettings(s:SecretSettings):PublicSettings{const {apiKey,minimaxKey,connectorSecrets=emptyConnectorSecrets,...rest}=s;return {...rest,hasApiKey:!!apiKey,hasMinimaxKey:!!minimaxKey,connectorSecretStatus:Object.fromEntries(Object.entries(connectorSecrets).map(([key,value])=>[key,!!value])) as PublicSettings['connectorSecretStatus']};}
+export function safeSettings(s:SecretSettings):PublicSettings{
+  const {apiKey,minimaxKey,...settings}=s;
+  return {...settings,hasApiKey:!!apiKey,hasMinimaxKey:!!minimaxKey};
+}
 async function protect(value:string,decrypt=false):Promise<string>{
   const script=`Add-Type -AssemblyName System.Security; $data=[Console]::In.ReadToEnd(); ${decrypt?"$bytes=[System.Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($data),$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser); [Console]::Write([Text.Encoding]::UTF8.GetString($bytes))":"$bytes=[System.Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($data),$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser); [Console]::Write([Convert]::ToBase64String($bytes))"}`;
-  return new Promise((resolve,reject)=>{const child=spawn('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,stdio:['pipe','pipe','pipe']});let output='';child.stdout.on('data',c=>output+=c);child.stderr.resume();const timer=setTimeout(()=>child.kill(),15000);child.on('error',()=>reject(new FlowError('VAULT_UNAVAILABLE','系统凭据保护不可用')));child.on('close',code=>{clearTimeout(timer);if(code===0)resolve(output.trim());else reject(new FlowError('VAULT_UNAVAILABLE','无法读取当前系统账号保护的服务配置'));});child.stdin.end(value);});
+  return new Promise((resolve,reject)=>{const child=spawn('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,stdio:['pipe','pipe','pipe']});let output='';child.stdout.on('data',c=>output+=c);child.stderr.resume();const timer=setTimeout(()=>child.kill(),15000);child.on('error',()=>reject(new FlowError('VAULT_UNAVAILABLE','系统凭据保护不可用')));child.on('close',code=>{clearTimeout(timer);if(code===0)resolve(output.trim());else reject(new FlowError('VAULT_UNAVAILABLE','无法读取当前系统账号保护的模型配置'));});child.stdin.end(value);});
 }
 export function createVault(directory:string){
   const file=path.join(directory,'providers.sealed');let cache:SecretSettings|undefined;let writes:Promise<unknown>=Promise.resolve();
@@ -16,20 +19,40 @@ export function createVault(directory:string){
   async function crypt(value:string,decrypt=false){
     if(process.platform==='win32')return protect(value,decrypt);
     const keyPath=path.join(directory,'vault.key');let key:Buffer;
-    try{key=await readFile(keyPath);}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;key=randomBytes(32);await writeFile(keyPath,key,{mode:0o600,flag:'wx'});}
+    try{key=await readFile(keyPath);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;key=randomBytes(32);try{await writeFile(keyPath,key,{mode:0o600,flag:'wx'});}catch(writeError){if((writeError as NodeJS.ErrnoException).code!=='EEXIST')throw writeError;key=await readFile(keyPath);}}
+    if(key.length!==32)throw new FlowError('VAULT_UNAVAILABLE','模型密钥文件无效');
     if(decrypt){const b=Buffer.from(value,'base64'),cipher=createDecipheriv('aes-256-gcm',key,b.subarray(0,12));cipher.setAuthTag(b.subarray(12,28));return Buffer.concat([cipher.update(b.subarray(28)),cipher.final()]).toString();}
     const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv),data=Buffer.concat([cipher.update(value),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),data]).toString('base64');
   }
-  async function get(){if(cache)return {...cache,connectorSecrets:{...cache.connectorSecrets}};await mkdir(directory,{recursive:true,mode:0o700});try{const stored=JSON.parse(await crypt(await readFile(file,'utf8'),true)),savedConnectors=stored.connectors||{};const {searchKey:_searchKey,searchCallCents:_searchCallCents,maxTokens:_maxTokens,tokenParameter:_tokenParameter,...current}=stored;cache={...defaults,...current,minimax:{...defaults.minimax,...stored.minimax},connectors:{tiktokShop:{...defaults.connectors.tiktokShop,...savedConnectors.tiktokShop},tiktokContent:{...defaults.connectors.tiktokContent,...savedConnectors.tiktokContent},temu:{...defaults.connectors.temu,...savedConnectors.temu},supplierBridge:{...defaults.connectors.supplierBridge,...savedConnectors.supplierBridge},assetBridge:{...defaults.connectors.assetBridge,...savedConnectors.assetBridge},logisticsBridge:{...defaults.connectors.logisticsBridge,...savedConnectors.logisticsBridge},customerBridge:{...defaults.connectors.customerBridge,...savedConnectors.customerBridge}},apiKey:stored.apiKey||'',minimaxKey:stored.minimaxKey||'',connectorSecrets:{...emptyConnectorSecrets,...stored.connectorSecrets},verifiedAt:stored.verifiedAt||null,revision:stored.revision||'unconfigured'};return {...cache!,connectorSecrets:{...cache!.connectorSecrets}};}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw new FlowError('VAULT_UNAVAILABLE','服务配置无法解密，请使用原系统账号运行');return {...defaults,apiKey:'',minimaxKey:'',connectorSecrets:{...emptyConnectorSecrets},verifiedAt:null,revision:'unconfigured'};}}
-  async function save(raw:unknown,apiKey?:string,minimaxKey?:string,connectorPatch?:Partial<ConnectorSecrets>,preserveApiKey=false,expectedRevision?:string){return exclusive(async()=>{const parsed=settingsSchema.safeParse(raw);if(!parsed.success)throw new FlowError('CONFIG_INVALID','服务配置不完整或额度超出范围');const old=await get();if(expectedRevision!==undefined&&old.revision!==expectedRevision)throw new DomainError('CONFIG_CHANGED','配置已被其他管理员修改，请刷新后重试',409);const changedEndpoint=old.baseUrl!==parsed.data.baseUrl||old.localModel!==parsed.data.localModel,miniMaxCorrection=preserveApiKey&&old.protocol==='openai'&&/minimax/i.test(old.model)&&/^https:\/\/api\.openai\.com\/v1\/?$/i.test(old.baseUrl)&&parsed.data.protocol==='minimax'&&/^https:\/\/api\.minimax(i)?\.(com|cn|io)\/v1\/?$/i.test(parsed.data.baseUrl),secrets={...old.connectorSecrets};
-    if(old.connectors.tiktokShop.baseUrl!==parsed.data.connectors.tiktokShop.baseUrl||old.connectors.tiktokShop.appKey!==parsed.data.connectors.tiktokShop.appKey){secrets.tiktokShopAppSecret='';secrets.tiktokShopAccessToken='';secrets.tiktokShopRefreshToken='';}
-    if(old.connectors.temu.baseUrl!==parsed.data.connectors.temu.baseUrl||old.connectors.temu.appKey!==parsed.data.connectors.temu.appKey){secrets.temuAppSecret='';secrets.temuAccessToken='';}
-    if(old.connectors.tiktokContent.baseUrl!==parsed.data.connectors.tiktokContent.baseUrl)secrets.tiktokContentAccessToken='';
-    for(const name of ['supplierBridge','assetBridge','logisticsBridge','customerBridge'] as const)if(old.connectors[name].baseUrl!==parsed.data.connectors[name].baseUrl)secrets[`${name}Token` as keyof ConnectorSecrets]='';
-    Object.assign(secrets,connectorPatch||{});
-    const s:SecretSettings={...parsed.data,apiKey:apiKey===undefined?(changedEndpoint&&!miniMaxCorrection?'':old.apiKey):apiKey,minimaxKey:minimaxKey===undefined?(old.minimax.baseUrl!==parsed.data.minimax.baseUrl?'':old.minimaxKey):minimaxKey,connectorSecrets:secrets,verifiedAt:null,revision:randomUUID()};await persist(s);return safeSettings(s);});}
-  async function persist(s:SecretSettings){await mkdir(directory,{recursive:true,mode:0o700});const temporary=file+'.'+randomUUID();await writeFile(temporary,await crypt(JSON.stringify(s)),{mode:0o600});await rename(temporary,file);cache=s;}
-  async function connectorAuthorized(connectors:SecretSettings['connectors'],connectorPatch:Partial<ConnectorSecrets>){return exclusive(async()=>{const old=await get(),{apiKey,minimaxKey,connectorSecrets,verifiedAt,revision,...publicSettings}=old,parsed=settingsSchema.safeParse({...publicSettings,connectors});if(!parsed.success)throw new FlowError('CONFIG_INVALID','授权返回的连接器配置无效');const s:SecretSettings={...parsed.data,apiKey,minimaxKey,connectorSecrets:{...connectorSecrets,...connectorPatch},verifiedAt,revision:randomUUID()};await persist(s);return safeSettings(s);});}
-  async function verified(revision:string){return exclusive(async()=>{const s=await get();if(s.revision!==revision)throw new FlowError('CONFIG_CHANGED','配置已变化，请重新验证');await persist({...s,verifiedAt:new Date().toISOString()});});}
-  return {get,save,verified,connectorAuthorized};
+  async function persist(value:SecretSettings){
+    await mkdir(directory,{recursive:true,mode:0o700});const temporary=file+'.'+randomUUID();
+    await writeFile(temporary,await crypt(JSON.stringify(value)),{mode:0o600});await rename(temporary,file);cache=value;
+  }
+  async function get():Promise<SecretSettings>{
+    if(cache)return {...cache};
+    await mkdir(directory,{recursive:true,mode:0o700});
+    let raw:string;
+    try{raw=await readFile(file,'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return {...defaults,apiKey:'',minimaxKey:'',verifiedAt:null,revision:'unconfigured'};throw new FlowError('VAULT_UNAVAILABLE','模型配置无法读取');}
+    try{
+      const stored=JSON.parse(await crypt(raw,true)) as Record<string,any>;
+      // One-time data migration: retain provider settings and keys, discard removed Web business config.
+      const parsed=settingsSchema.parse({baseUrl:stored.baseUrl,model:stored.model,localModel:stored.localModel,format:stored.format,protocol:stored.protocol||'openai',minimax:{baseUrl:stored.minimax?.baseUrl||defaults.minimax.baseUrl,speechModel:stored.minimax?.speechModel||defaults.minimax.speechModel,voiceId:stored.minimax?.voiceId||defaults.minimax.voiceId,enabled:stored.minimax?.enabled??Number(stored.minimax?.speechLimitCents||0)>0}});
+      const value:SecretSettings={...parsed,apiKey:String(stored.apiKey||''),minimaxKey:String(stored.minimaxKey||''),verifiedAt:typeof stored.verifiedAt==='string'?stored.verifiedAt:null,revision:String(stored.revision||randomUUID())};
+      if('connectors' in stored||'connectorSecrets' in stored||'searchKey' in stored||'speechLimitCents' in (stored.minimax||{}))await persist(value);
+      else cache=value;
+      return {...value};
+    }catch{throw new FlowError('VAULT_UNAVAILABLE','模型配置无法解密或格式无效，请检查服务端配置');}
+  }
+  async function save(raw:unknown,apiKey?:string,minimaxKey?:string,expectedRevision?:string){return exclusive(async()=>{
+    const parsed=settingsSchema.safeParse(raw);if(!parsed.success)throw new FlowError('CONFIG_INVALID','模型配置格式无效');
+    const old=await get();if(expectedRevision!==old.revision)throw new DomainError('CONFIG_CHANGED','模型配置已被其他管理员修改，请刷新后重试',409);
+    const key=apiKey===undefined?(old.baseUrl===parsed.data.baseUrl&&old.localModel===parsed.data.localModel?old.apiKey:''):apiKey.trim();
+    const audioKey=minimaxKey===undefined?(old.minimax.baseUrl===parsed.data.minimax.baseUrl?old.minimaxKey:''):minimaxKey.trim();
+    if([key,audioKey].some(value=>value.length>4000||/[\r\n]/.test(value)))throw new FlowError('CONFIG_INVALID','模型密钥格式无效');
+    if(parsed.data.minimax.enabled&&!audioKey)throw new FlowError('CONFIG_INVALID','启用音频模型前请配置密钥');
+    const next:SecretSettings={...parsed.data,apiKey:key,minimaxKey:audioKey,verifiedAt:null,revision:randomUUID()};
+    await persist(next);return safeSettings(next);
+  });}
+  async function verified(revision:string){return exclusive(async()=>{const current=await get();if(current.revision!==revision)throw new FlowError('CONFIG_CHANGED','模型配置已变化，请重新验证');await persist({...current,verifiedAt:new Date().toISOString()});});}
+  return {get,save,verified};
 }

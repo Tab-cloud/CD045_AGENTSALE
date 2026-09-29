@@ -1,1 +1,17 @@
-{"name":"@agentsale/automation","version":"0.3.0","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"alipay-sdk":"^4.14.0","cheerio":"1.2.0","drizzle-orm":"0.45.2","mammoth":"1.12.0","pdf-parse":"2.4.5","qrcode":"^1.5.4","sharp":"0.35.4","zod":"4.5.4"},"devDependencies":{"@types/qrcode":"^1.5.6"}}
+{
+  "name": "@agentsale/automation",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "alipay-sdk": "^4.14.0",
+    "drizzle-orm": "0.45.2",
+    "qrcode": "^1.5.4",
+    "sharp": "0.35.4",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
+  }
+}

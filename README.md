@@ -2,24 +2,24 @@
 
 本目录是独立的 Git 项目和 pnpm 工作区。请进入本目录执行 `pnpm install --frozen-lockfile`、`pnpm check`、`pnpm start`；无需根目录的 Node 配置或桌面应用文件。仓库远端只维护这里的 Web 服务。
 
-集中存放现有 Web 项目与后续 Web 服务。
+Web 仅承载账号、计费、供应商配置与薄模型网关。Agent 规划、搜索、网页正文读取、知识库、文件工作和媒体任务都在桌面端执行；旧 Web 业务路由已从构建中删除。
 
-| 目录 | 当前职责 | 目标职责 |
-|---|---|---|
-| `console/` | 会员页面、身份/订阅与 AI/API 服务接口；旧业务 API 仅供迁移验证 | 服务端统一接口 |
-| `admin-console/` | 静态管理页面：模型、搜索、媒体、支付和账号配置 | 管理员入口 |
-| `packages/` | 服务端数据与服务模块；部分旧自动化代码待迁移 | 服务端内部模块 |
-| `scripts/`、`tests/` | 启动、验收工具和 Web 测试 | 服务端构建与回归验证 |
+| 目录 | 职责 |
+| --- | --- |
+| `console/` | 会员页面、认证与支付接口、统一模型能力接口 |
+| `admin-console/` | 账号、套餐、支付和模型供应商配置 |
+| `packages/` | Web 服务端的数据、认证、计费与模型适配模块 |
+| `scripts/`、`tests/` | 启动、数据导出和 Web 验证工具 |
 
-Web 端只承载账号、会员、管理员配置和 AI/API 服务接口。研究、任务编排、内容制作及成果管理在桌面端实现。旧业务 API 仅在本机迁移验证模式开放，公网部署返回 404；旧代码尚未清退。
+公开网页搜索和知识库检索由桌面执行，无独立付费搜索供应商和检索额度。模型供应商的文本、图片、视频和音频 API 密钥仍由 Web 保管。旧 Web 知识资料可用 `scripts/export-desktop-knowledge.mjs` 按账号导出为桌面备份 v2；真实数据迁移须在服务器备份后单独验收。
 
-计划中的会员中心与桌面 API 公网地址为 `https://lingfeng.zailink.space`，管理员入口为 `https://admin.lingfeng.zailink.space`。部署时分别设置 `LINGFENG_PUBLIC_URL` 与 `LINGFENG_ADMIN_URL`；这只是目标域名记录，不表示 DNS、HTTPS 或服务已部署。
+会员中心与桌面 API 使用的公网地址为 `https://lingfeng.zailink.space`，管理员入口为 `https://admin.lingfeng.zailink.space`。部署时分别设置 `LINGFENG_PUBLIC_URL` 与 `LINGFENG_ADMIN_URL`；这两个地址已有部署，当前源码中的新模型接口仍须在目标环境发布并验收。
 
-公网部署前请按 [Web 服务部署前审核](WEB_DEPLOYMENT_REVIEW.md) 逐项验收。现阶段可部署隔离预发布环境联调；真实收费和公开注册仍须完成服务商配置、资质审核与端到端验收。
+新版本发布前请按 [Web 服务发布检查](WEB_DEPLOYMENT_REVIEW.md) 验收；真实模型、注册和支付仍须用目标环境联调。
 
 在本目录执行 `pnpm build` 后用 `pnpm start` 启动。3045 是唯一的 Next 服务进程，提供会员页面和接口；3047 由轻量静态服务器提供管理员页面，并只代理管理接口到 3045。两者由同一个启动器管理。`pnpm dev` 会先构建静态管理页面，修改管理页面后需重启开发进程。迁移旧数据时请显式设置原有的 `AGENTSALE_DATA_DIR` 绝对路径；默认本地数据目录现在位于本目录的 `.local/pglite`。
 
-Web 专用业务逻辑、视觉样式与技能目录都位于本目录的 `packages/`。桌面应用仍留在外层工作区，不属于本 Git 项目。
+Web 服务端模块与页面位于本目录；技能目录已经迁至桌面应用。桌面应用仍留在外层工作区，不属于本 Git 项目。
 
 ## 账号、短信和微信登录
 

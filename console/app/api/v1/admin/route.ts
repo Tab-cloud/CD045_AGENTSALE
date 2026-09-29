@@ -1,21 +1,16 @@
 import {session} from '../../../../lib/platform';
 import { z } from 'zod';
-import { safeSettings,connectorIds,connectorSecretKeys } from '@agentsale/automation';
+import { safeSettings,settingsSchema } from '@agentsale/automation';
 import { validUrl } from '../../../../../packages/automation/src/network';
-import { failure,getAutomation } from '../../../../lib/local-runtime';
+import {failure,modelVault,verifyConfiguredModel,auditConfiguration} from '../../../../lib/local-runtime';
 import { jsonBody } from '../../../../lib/server-access';
 export const runtime='nodejs';export const dynamic='force-dynamic';
 const command=z.discriminatedUnion('action',[
-  z.object({action:z.literal('save'),revision:z.string().min(1),settings:z.unknown(),apiKey:z.string().max(4000).optional(),minimaxKey:z.string().max(4000).optional(),connectorSecrets:z.partialRecord(z.enum(connectorSecretKeys),z.string().max(4000)).optional(),preserveApiKey:z.boolean().optional()}).strict(),
-  z.object({action:z.literal('verify')}).strict(),
-  z.object({action:z.literal('verifyConnector'),connector:z.enum(connectorIds)}).strict(),
-  z.object({action:z.literal('beginAuthorization'),connector:z.enum(['tiktok_shop','temu'])}).strict()
+  z.object({action:z.literal('save'),revision:z.string().min(1),settings:z.unknown(),apiKey:z.string().max(4000).optional(),minimaxKey:z.string().max(4000).optional()}).strict(),
+  z.object({action:z.literal('verify')}).strict()
 ]);
-export async function GET(request:Request){try{await session(request,false,true);const engine=await getAutomation();return Response.json({settings:safeSettings(await engine.vault.get())},{headers:{'Cache-Control':'no-store'}});}catch(e){return failure(e);}}
-export async function POST(request:Request){try{const actor=await session(request,true,true);const body=command.parse(await jsonBody(request)),engine=await getAutomation();
-  if(body.action==='save'){const s=body.settings as {baseUrl:string;localModel:boolean};validUrl(s.baseUrl,s.localModel);const settings=await engine.vault.save(body.settings,body.apiKey,body.minimaxKey,body.connectorSecrets,body.preserveApiKey,body.revision);await engine.store.audit('provider.configure',actor.id,'管理员更新模型配置，验证已失效');return Response.json({settings,message:'模型配置已保存，请测试连接'});}
-  if(body.action==='verify')return Response.json({...await engine.verify(),message:'模型调用及结构化输出已验证'});
-  if(body.action==='verifyConnector'){const connector=await engine.commerce.verify(body.connector);await engine.store.audit('connector.verify',actor.id,`管理员验证 ${body.connector} 连接器`);return Response.json({connector,message:`${body.connector} 已通过真实接口验证`});}
-  const callback=new URL('/api/v1/oauth/temu/callback',process.env.LINGFENG_PUBLIC_URL||`http://127.0.0.1:${process.env.AGENTSALE_PORT||'3045'}`).href;
-  const authorization=await engine.commerce.beginAuthorization(body.connector,callback);await engine.store.audit('connector.authorize.start',actor.id,`管理员启动 ${body.connector} 平台授权`);return Response.json({...authorization,message:'正在打开平台授权页面'});
+export async function GET(request:Request){try{await session(request,false,true);return Response.json({settings:safeSettings(await (await modelVault()).get())},{headers:{'Cache-Control':'no-store'}});}catch(e){return failure(e);}}
+export async function POST(request:Request){try{const actor=await session(request,true,true);const body=command.parse(await jsonBody(request));
+  if(body.action==='save'){const s=settingsSchema.parse(body.settings);validUrl(s.baseUrl,s.localModel);const settings=await (await modelVault()).save(s,body.apiKey,body.minimaxKey,body.revision);await auditConfiguration('provider.configure',actor.id,'管理员更新模型配置，验证已失效');return Response.json({settings,message:'模型配置已保存，请测试连接'});}
+  if(body.action==='verify')return Response.json({...await verifyConfiguredModel(),message:'模型调用及结构化输出已验证'});
 }catch(e){if(e instanceof z.ZodError)return Response.json({message:'管理操作参数无效'},{status:400});return failure(e);}}

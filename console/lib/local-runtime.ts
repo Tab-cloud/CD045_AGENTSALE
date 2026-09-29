@@ -1,10 +1,14 @@
 import { createRepository, LOCAL_WORKSPACE, type Repository } from '@agentsale/database';
 import { DomainError } from '@agentsale/domain';
-import { createAutomation,FlowError } from '@agentsale/automation';
+import {FlowError} from '@agentsale/automation';
+import {createVault} from '../../packages/automation/src/vault';
+import {assertProvider,verifyModel} from '../../packages/automation/src/providers';
+import {randomUUID} from 'node:crypto';
+import {sql} from 'drizzle-orm';
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
 
-const runtime = globalThis as typeof globalThis & { agentsaleRepository?: Promise<Repository>; agentsaleTimer?: ReturnType<typeof setInterval>; agentsaleBusy?: boolean; agentsaleAutomation?: ReturnType<typeof createAutomation> };
+const runtime = globalThis as typeof globalThis & { agentsaleRepository?: Promise<Repository>; lingfengModelVault?: ReturnType<typeof createVault> };
 export function requireLocal(request: Request, mutation = false) {
   const url = new URL(request.url);
   // Next reconstructs request.url using its internal hostname. The HTTP Host
@@ -26,25 +30,31 @@ export async function getRepository() {
       if (!dataDir) throw new DomainError('DATA_DIR_REQUIRED', '请使用项目根目录的启动命令，以配置本地数据目录', 503);
       await mkdir(dataDir, { recursive: true });
       const repository = await createRepository(dataDir);
-      if(!process.env.LINGFENG_PUBLIC_URL)await repository.seed();
-      runtime.agentsaleAutomation=createAutomation(repository,LOCAL_WORKSPACE,path.join(path.dirname(dataDir),'automation'));
-      await runtime.agentsaleAutomation.store.recover();
-      if (process.env.LINGFENG_LEGACY_ADMIN_WORKER === '1' && !runtime.agentsaleTimer) {
-        runtime.agentsaleTimer = setInterval(async () => {
-          if (runtime.agentsaleBusy) return;
-          runtime.agentsaleBusy = true;
-          try { await repository.processOne(LOCAL_WORKSPACE); await runtime.agentsaleAutomation?.tick(); await runtime.agentsaleAutomation?.agentTick(); }
-          catch (error) { console.error('Local task processing failed:', error instanceof Error ? error.message : 'unknown'); }
-          finally { runtime.agentsaleBusy = false; }
-        }, 1500);
-        runtime.agentsaleTimer.unref();
-      }
       return repository;
     })().catch(error => { runtime.agentsaleRepository = undefined; throw error; });
   }
   return runtime.agentsaleRepository;
 }
-export async function getAutomation(){await getRepository();return runtime.agentsaleAutomation!;}
+export function modelRoot(){
+  const dataDir=process.env.AGENTSALE_DATA_DIR;
+  if(!dataDir)throw new DomainError('DATA_DIR_REQUIRED','服务端数据目录未配置',503);
+  return path.join(path.dirname(dataDir),'automation');
+}
+export async function modelVault(){
+  await getRepository();
+  return runtime.lingfengModelVault??=createVault(path.join(modelRoot(),'private'));
+}
+export async function verifyConfiguredModel(){
+  const vault=await modelVault(),settings=await vault.get();
+  assertProvider(settings,false);
+  const result=await verifyModel(settings);
+  await vault.verified(settings.revision);
+  return {verified:true,model:result.model};
+}
+export async function auditConfiguration(action:string,actor:string,detail:string){
+  const repository=await getRepository();
+  await repository.scoped(LOCAL_WORKSPACE,tx=>tx.execute(sql`INSERT INTO audit VALUES(${randomUUID()},${LOCAL_WORKSPACE},${action},${actor},${detail},${new Date().toISOString()})`));
+}
 export function failure(error: unknown) {
   if (DomainError.is(error)) return Response.json({ code: error.code, message: error.message }, { status: error.status });
   if (FlowError.is(error)) return Response.json({code:error.code,message:error.message},{status:422});

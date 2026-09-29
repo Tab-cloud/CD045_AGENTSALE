@@ -2,9 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { createHash } from 'node:crypto';
-import { load } from 'cheerio';
-import { FlowError, type Source } from './types';
+import { FlowError } from './types';
 
 export function isPublicAddress(ip:string):boolean {
   if(isIP(ip)===6)return /^[23][0-9a-f]{3}:/i.test(ip)&&!/^2001:(db8|0:|10:|20:)/i.test(ip)&&!/^2002:/i.test(ip);
@@ -42,9 +40,8 @@ async function publiclyResolvable(hostname:string){
   publicDnsCache.set(hostname,{allowed,expires:Date.now()+300_000});return allowed;
 }
 
-export async function requestBytes(raw:string,options:{method?:string;headers?:Record<string,string>;body?:string|Buffer;local?:boolean;trustedMiniMax?:boolean;trustedDnsResolver?:boolean;timeout?:number;maxBytes?:number;redirects?:number;followRedirects?:boolean;allowedDomains?:string[]}={}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer;url:string}>{
+export async function requestBytes(raw:string,options:{method?:string;headers?:Record<string,string>;body?:string|Buffer;local?:boolean;trustedMiniMax?:boolean;trustedDnsResolver?:boolean;timeout?:number;maxBytes?:number;redirects?:number;followRedirects?:boolean}={}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer;url:string}>{
   const url=validUrl(raw,options.local),hostname=url.hostname.replace(/^\[|\]$/g,'');
-  if(options.allowedDomains?.length&&!options.allowedDomains.some(d=>url.hostname===d||url.hostname.endsWith('.'+d)))throw new FlowError('DOMAIN_RESTRICTED','请求域名不在管理员允许范围');
   let timer:ReturnType<typeof setTimeout>|undefined;
   const records=await Promise.race([lookup(hostname,{all:true}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new FlowError('DNS_TIMEOUT','域名解析超时',true)),5000);})]).finally(()=>clearTimeout(timer));
   if(!records.length)throw new FlowError('URL_REJECTED','域名没有可用地址');
@@ -55,7 +52,7 @@ export async function requestBytes(raw:string,options:{method?:string;headers?:R
   const selected=records[0];
   return new Promise((resolve,reject)=>{
     const req=(url.protocol==='https:'?https:http).request(url,{
-      method:options.method||'GET',agent:false,headers:{'User-Agent':'AgentSale/0.2 (+supplier-research)','Accept-Encoding':'identity',...options.headers},
+      method:options.method||'GET',agent:false,headers:{'User-Agent':'LingfengModelGateway/1.0','Accept-Encoding':'identity',...options.headers},
       // Pin the checked address to prevent a second DNS lookup/rebinding.
       lookup:((_host:unknown,opts:unknown,cb:Function)=>{if((opts as {all?:boolean}).all)cb(null,[selected]);else cb(null,selected.address,selected.family);}) as never
     },res=>{
@@ -76,48 +73,4 @@ export async function requestBytes(raw:string,options:{method?:string;headers?:R
     req.on('error',e=>reject(e instanceof FlowError?e:new FlowError('NETWORK_ERROR','网络连接失败，请检查服务或稍后重试',true)));
     if(options.body)req.write(options.body);req.end();
   });
-}
-export function extractSource(html:string,url:string):Source {
-  const $=load(html);$('script,style,noscript,svg,iframe,form,nav,aside,footer').remove();
-  $('header').filter((_,element)=>$(element).closest('article').length===0).remove();
-  const title=$('title').text().trim().slice(0,250)||new URL(url).hostname;
-  const candidates=['[itemprop="articleBody"]','article','main','[role="main"]'];
-  let body='';
-  for(const selector of candidates){
-    const sections=$(selector).toArray().map(element=>{
-      const block=$(element),paragraphs=block.find('p').toArray().map(p=>$(p).text().replace(/\s+/g,' ').trim()).filter(Boolean).join('\n');
-      return paragraphs.length>=80?paragraphs:block.text().replace(/\s+/g,' ').trim();
-    }).filter(text=>text.length>=80);
-    if(sections.length){body=sections.sort((a,b)=>b.length-a.length)[0];break;}
-  }
-  if(!body)body=$('body').text().replace(/\s+/g,' ').trim();
-  const truncated=body.length>18000,text=body.slice(0,18000);
-  if(text.length<80)throw new FlowError('SOURCE_EMPTY','网页缺少可读取正文，可能需要登录或动态加载');
-  return {id:createHash('sha256').update(url).digest('hex').slice(0,16),url,title,text,hash:createHash('sha256').update(html).digest('hex'),fetchedAt:new Date().toISOString(),status:'fetched',truncated};
-}
-export function robotsAllows(text:string,path:string){
-  let active=false;const rules:{prefix:string;allow:boolean}[]=[];
-  for(const raw of text.split(/\r?\n/)){const line=raw.split('#')[0].trim(),idx=line.indexOf(':');if(idx<0)continue;const key=line.slice(0,idx).trim().toLowerCase(),value=line.slice(idx+1).trim();
-    if(key==='user-agent')active=value==='*'||value.toLowerCase().startsWith('agentsale');
-    else if(active&&['allow','disallow'].includes(key)&&value){const prefix=value.split('*')[0].replace(/\$$/,'');if(path.startsWith(prefix))rules.push({prefix,allow:key==='allow'});}
-  }
-  return rules.sort((a,b)=>b.prefix.length-a.prefix.length||Number(b.allow)-Number(a.allow))[0]?.allow??true;
-}
-export async function fetchSource(raw:string,allowedDomains:string[]=[],transport:typeof requestBytes=requestBytes){
-  let url=validUrl(raw);
-  for(let hop=0;hop<=3;hop++){
-    if(allowedDomains.length&&!allowedDomains.some(d=>url.hostname===d||url.hostname.endsWith('.'+d)))throw new FlowError('DOMAIN_RESTRICTED','网页不在管理员允许的来源域名中');
-    const robots=await transport(new URL('/robots.txt',url).href,{maxBytes:256000,allowedDomains});
-    if(robots.status===200&&!robotsAllows(robots.body.toString(),url.pathname+url.search))throw new FlowError('ROBOTS_DENIED','该来源不允许此自动采集路径');
-    if(![200,404,410].includes(robots.status))throw new FlowError('ROBOTS_UNAVAILABLE','无法确认来源自动访问规则');
-    const response=await transport(url.href,{allowedDomains,followRedirects:false});
-    if(response.status>=300&&response.status<400&&response.headers.location){
-      if(hop===3)throw new FlowError('REDIRECT_LIMIT','网页重定向过多');
-      url=validUrl(new URL(response.headers.location,url).href);continue;
-    }
-    if(response.status!==200)throw new FlowError('SOURCE_HTTP','网页返回 '+response.status+'，未绕过登录或访问限制');
-    if(!String(response.headers['content-type']).toLowerCase().includes('text/html'))throw new FlowError('SOURCE_TYPE','当前正文读取支持 HTML 页面');
-    return extractSource(response.body.toString('utf8'),url.href);
-  }
-  throw new FlowError('REDIRECT_LIMIT','网页重定向过多');
 }

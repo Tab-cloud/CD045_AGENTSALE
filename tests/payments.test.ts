@@ -44,7 +44,7 @@ it('creates signed PC and mobile Alipay website checkout links with server-owned
  const root=await mkdtemp(path.join(tmpdir(),'lingfeng-payment-'));dirs.push(root);
  const payments=createPayments(root);
  await payments.configure({publicUrl:'https://members.example.com',wechat:{...wx,enabled:false},alipay:ali});
- const order:Order={id:'a'.repeat(32),userId:'user',channel:'alipay',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,search:10,image:1,video:1}}};
+ const order:Order={id:'a'.repeat(32),userId:'user',channel:'alipay',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,image:1,video:1}}};
  for(const [device,method,productCode] of [['pc','alipay.trade.page.pay','FAST_INSTANT_TRADE_PAY'],['mobile','alipay.trade.wap.pay','QUICK_WAP_WAY']] as const){
    const checkout=await payments.checkout(order,device);
    expect(checkout.kind).toBe('redirect');
@@ -68,7 +68,7 @@ it('closes a WeChat transaction only after a signed 204 response',async()=>{
  const transport:typeof requestBytes=async(url,options)=>{calls.push(url);expect(options.method).toBe('POST');expect(JSON.parse(String(options.body))).toEqual({mchid:wx.merchantId});return {status:204,headers:Object.fromEntries(signed(valid?'':'tampered').entries()),body:Buffer.alloc(0),url};};
  const payments=createPayments(root,transport);
  await payments.configure({publicUrl:'https://members.example.com',wechat:wx,alipay:{...ali,enabled:false}});
- const order:Order={id:'b'.repeat(32),userId:'user',channel:'wechat',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,search:10,image:1,video:1}}};
+ const order:Order={id:'b'.repeat(32),userId:'user',channel:'wechat',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,image:1,video:1}}};
  expect(await payments.close(order)).toBeNull();
  expect(calls[0]).toBe('https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/'+order.id+'/close');
  valid=false;
@@ -78,7 +78,7 @@ it('reports a paid Alipay transaction instead of closing it, and handles an uncr
  const root=await mkdtemp(path.join(tmpdir(),'lingfeng-payment-'));dirs.push(root);
  const payments=createPayments(root);
  await payments.configure({publicUrl:'https://members.example.com',wechat:{...wx,enabled:false},alipay:ali});
- const order:Order={id:'c'.repeat(32),userId:'user',channel:'alipay',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,search:10,image:1,video:1}}};
+ const order:Order={id:'c'.repeat(32),userId:'user',channel:'alipay',status:'pending',createdAt:new Date().toISOString(),plan:{id:'standard',name:'聆风会员',priceCents:9900,days:30,published:true,limits:{model:10,image:1,video:1}}};
  let uncreated=false,tradeStatus='TRADE_SUCCESS';
  const exec=vi.spyOn(AlipaySdk.prototype,'exec').mockImplementation(async method=>{
    if(method==='alipay.trade.close')return uncreated?{code:'40004',subCode:'ACQ.TRADE_NOT_EXIST'} as never:{code:'40004',subCode:'ACQ.TRADE_STATUS_ERROR'} as never;

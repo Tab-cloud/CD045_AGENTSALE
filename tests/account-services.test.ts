@@ -20,7 +20,7 @@ describe('phone registration and WeChat account binding',()=>{
     const result=await auth.registerPhone('new-member',phone,delivered,'very-long-password',hash);
     expect(result.user).toMatchObject({username:'new-member',phone,role:'operator'});
     await expect(auth.registerPhone('another-member',phone,delivered,'very-long-password',hash)).rejects.toThrow('已注册');
-    const plan={id:'standard',name:'会员',priceCents:100,days:30,published:true,limits:{model:1,search:1,image:0,video:0}};
+    const plan={id:'standard',name:'会员',priceCents:100,days:30,published:true,limits:{model:1,image:0,video:0}};
     await members.savePlan(plan,admin);const order=await members.createOrder(result.user,'standard','alipay');await members.settle(order.id,'alipay',100,'provider-transaction');
     const state=await auth.beginWechat('bind',result.user.id);expect(await auth.consumeWechat(state)).toMatchObject({userId:result.user.id,purpose:'bind'});await expect(auth.consumeWechat(state)).rejects.toThrow('失效');
     const linked=await auth.bindWechat(result.user.id,'wx1234567890abcdef','verified-openid');expect(linked.user.wechatBound).toBe(true);
@@ -29,7 +29,7 @@ describe('phone registration and WeChat account binding',()=>{
   });
   it('shows a paginated administrator bill ledger with paid and pending orders',async()=>{
     const workspace=randomUUID(),auth=createAuth(repo,workspace),members=createMembership(repo,workspace),admin=await auth.create('owner','very-long-password','admin'),member=await auth.register('member','very-long-password');
-    await members.savePlan({id:'standard',name:'会员',priceCents:300,days:30,published:true,limits:{model:1,search:0,image:0,video:0}},admin);
+    await members.savePlan({id:'standard',name:'会员',priceCents:300,days:30,published:true,limits:{model:1,image:0,video:0}},admin);
     const paid=await members.createOrder(member,'standard','wechat');await members.settle(paid.id,'wechat',300,'provider-transaction');await members.createOrder(member,'standard','alipay');
     expect((await members.ordersPage(admin,1,'', 'all')).total).toBe(2);
     expect((await members.ordersPage(admin,1,paid.id,'paid')).orders[0]).toMatchObject({id:paid.id,username:'member',status:'paid'});
@@ -67,7 +67,7 @@ describe('phone registration and WeChat account binding',()=>{
     const workspace=randomUUID(),auth=createAuth(repo,workspace),members=createMembership(repo,workspace),services=createAuthServices(path.join(root,'wechat-existing')),phone='13500135000';
     const admin=await auth.create('owner','very-long-password','admin'),member=await auth.register('wechat-member','very-long-password');
     await repo.scoped(workspace,tx=>tx.execute(sql`UPDATE app_users SET phone=${phone} WHERE id=${member.id}`));
-    await members.savePlan({id:'standard',name:'会员',priceCents:100,days:30,published:true,limits:{model:1,search:1,image:0,video:0}},admin);
+    await members.savePlan({id:'standard',name:'会员',priceCents:100,days:30,published:true,limits:{model:1,image:0,video:0}},admin);
     const order=await members.createOrder(member,'standard','alipay');await members.settle(order.id,'alipay',100,'wechat-existing-transaction');
     const pending=await auth.beginWechatPhone('wx1234567890abcdef','new-openid');let code='';
     await auth.requestPhoneCode(phone,'wechat','wechat-existing-test',async(_,value)=>{code=value;},services.codeHash);

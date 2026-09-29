@@ -5,11 +5,12 @@ import {createMembership,planSchema,type Plan} from '../packages/automation/src/
 import {sql} from 'drizzle-orm';
 import {randomUUID} from 'node:crypto';
 let repo:Repository;beforeAll(async()=>{repo=await createRepository();},30000);afterAll(async()=>repo?.close());
-async function setup(){const workspace=randomUUID(),auth=createAuth(repo,workspace),members=createMembership(repo,workspace),admin=await auth.create('administrator','test-long-password','admin'),user=await auth.register('member','test-long-password');const plan:Plan={id:'test',name:'测试套餐',days:30,priceCents:100,published:true,limits:{model:2,search:1,image:1,video:0}};await members.savePlan(plan,admin);return {workspace,auth,members,admin,user,plan};}
+async function setup(){const workspace=randomUUID(),auth=createAuth(repo,workspace),members=createMembership(repo,workspace),admin=await auth.create('administrator','test-long-password','admin'),user=await auth.register('member','test-long-password');const plan:Plan={id:'test',name:'测试套餐',days:30,priceCents:100,published:true,limits:{model:2,image:1,video:0}};await members.savePlan(plan,admin);return {workspace,auth,members,admin,user,plan};}
+const claim=(members:ReturnType<typeof createMembership>,userId:string,capability:'text.generate'|'image.generate'|'video.generate',id=randomUUID())=>members.claimModelRequest(id,userId,'fixture-hash',capability);
 describe('subscription authority',()=>{
  it('keeps mixed-case plan identifiers consistent across saving and manual membership',async()=>{
   const {members,admin,user,plan}=await setup();
-  const premium={...plan,id:'Premium',name:'聆风会员-Premium',priceCents:19900,limits:{model:80000,search:40000,image:0,video:0}};
+  const premium={...plan,id:'Premium',name:'聆风会员-Premium',priceCents:19900,limits:{model:80000,image:0,video:0}};
   expect(planSchema.safeParse(premium).success).toBe(true);
   await members.savePlan(premium,admin);
   expect((await members.plans(true)).find(p=>p.id==='Premium')).toMatchObject(premium);
@@ -73,17 +74,17 @@ describe('subscription authority',()=>{
   const order=await members.createOrder(user,'test','wechat');
   expect((await members.dashboard(admin)).totals.pendingOrders).toBe(1);
   await members.settle(order.id,'wechat',100,'dashboard-payment');
-  await members.consume(user.id,'search');
+  await claim(members,user.id,'text.generate');
   const result=await members.dashboard(admin);
   expect(result.totals).toEqual({users:1,activeMembers:1,paidOrders:1,pendingOrders:0,revenueCents:100});
   expect(result.trend.at(-1)).toMatchObject({paidOrders:1,revenueCents:100,usage:1});
-  expect(result.usageToday.find(item=>item.feature==='search')?.count).toBe(1);
+  expect(result.usageToday.find(item=>item.feature==='model')?.count).toBe(1);
   expect(result.recentOrders[0]).toMatchObject({id:order.id,username:user.username,priceCents:100,channel:'wechat'});
   await members.revoke(user.id,admin);
   expect((await members.dashboard(admin)).totals).toMatchObject({activeMembers:0,paidOrders:1,revenueCents:100});
  });
  it('registration never creates administrators; configuration requires admin; sessions can be revoked',async()=>{const {auth,members,user,plan}=await setup();expect(user.role).toBe('operator');await expect(auth.create('badadmin','test-long-password','admin',user)).rejects.toThrow('管理员');await expect(members.savePlan(plan,user)).rejects.toThrow('管理员');const logged=await auth.login('member','test-long-password');await expect(auth.require(logged.token,true)).rejects.toThrow('管理员');await auth.logout(logged.token);await expect(auth.require(logged.token)).rejects.toThrow('登录');});
- it('blocks unsubscribed, expired and revoked users, including administrators without a plan',async()=>{const {workspace,members,user,admin}=await setup();await expect(members.consume(admin.id,'model')).rejects.toThrow('会员');await expect(members.consume(user.id,'search')).rejects.toThrow('会员');const order=await members.createOrder(user,'test','wechat');await members.settle(order.id,'wechat',100,'transaction-one');await members.requireFeature(user.id,'model');await expect(members.requireFeature(user.id,'video')).rejects.toThrow('会员');await repo.scoped(workspace,async tx=>{await tx.execute(sql`UPDATE memberships SET document=jsonb_set(document,'{expiresAt}','"2000-01-01T00:00:00.000Z"'::jsonb) WHERE user_id=${user.id}`);});await expect(members.consume(user.id,'model')).rejects.toThrow('到期');await members.revoke(user.id,admin);expect((await members.status(user.id)).active).toBe(false);});
+ it('blocks unsubscribed, expired and revoked users, including administrators without a plan',async()=>{const {workspace,members,user,admin}=await setup();await expect(claim(members,admin.id,'text.generate')).rejects.toThrow('会员');await expect(claim(members,user.id,'text.generate')).rejects.toThrow('会员');const order=await members.createOrder(user,'test','wechat');await members.settle(order.id,'wechat',100,'transaction-one');await members.requireFeature(user.id,'model');await expect(members.requireFeature(user.id,'video')).rejects.toThrow('会员');await repo.scoped(workspace,async tx=>{await tx.execute(sql`UPDATE memberships SET document=jsonb_set(document,'{expiresAt}','"2000-01-01T00:00:00.000Z"'::jsonb) WHERE user_id=${user.id}`);});await expect(claim(members,user.id,'text.generate')).rejects.toThrow('到期');await members.revoke(user.id,admin);expect((await members.status(user.id)).active).toBe(false);});
  it('validates provider, amount and transaction; repeated settlement extends membership exactly once',async()=>{const {members,user,plan,admin}=await setup();const o=await members.createOrder(user,'test','alipay');await members.savePlan({...plan,priceCents:999},admin);await expect(members.settle(o.id,'wechat',100,'tx')).rejects.toThrow('校验');await expect(members.settle(o.id,'alipay',99,'tx')).rejects.toThrow('校验');await members.settle(o.id,'alipay',100,'tx');const expires=(await members.status(user.id)).membership!.expiresAt;await Promise.all([members.settle(o.id,'alipay',100,'tx'),members.settle(o.id,'alipay',100,'tx')]);expect((await members.status(user.id)).membership!.expiresAt).toBe(expires);await expect(members.settle(o.id,'alipay',100,'different')).rejects.toThrow('流水');});
  it('closes only an owned pending order and still credits a verified late payment',async()=>{
   const {members,user,auth,admin}=await setup(),other=await auth.register('another','test-long-password');
@@ -100,29 +101,27 @@ describe('subscription authority',()=>{
   expect((await members.ordersPage(admin,1,'','closed')).total).toBe(0);
   expect((await members.closeOrder(order.id,user.id)).status).toBe('paid');
  });
- it('enforces concurrent daily limits and charges one media reservation per id',async()=>{const {members,user,auth}=await setup();const o=await members.createOrder(user,'test','wechat');await members.settle(o.id,'wechat',100,'tx');const results=await Promise.allSettled(Array.from({length:4},()=>members.consume(user.id,'model')));expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(2);const id=randomUUID();await Promise.all([members.claimAsset(id,user.id,'image'),members.claimAsset(id,user.id,'image')]);await expect(members.claimAsset(randomUUID(),user.id,'image')).rejects.toThrow('额度');await expect(members.claimAsset(randomUUID(),user.id,'video')).rejects.toThrow('会员');const other=await auth.register('another','test-long-password');await expect(members.ownAsset(id,other.id)).rejects.toThrow('不存在');await expect(members.order(o.id,other.id)).rejects.toThrow('不存在');});
+ it('enforces concurrent daily limits and charges one model request per id',async()=>{const {members,user,auth}=await setup();const o=await members.createOrder(user,'test','wechat');await members.settle(o.id,'wechat',100,'tx');const results=await Promise.allSettled(Array.from({length:4},()=>claim(members,user.id,'text.generate')));expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(2);const id=randomUUID();await Promise.all([claim(members,user.id,'image.generate',id),claim(members,user.id,'image.generate',id)]);await expect(claim(members,user.id,'image.generate')).rejects.toThrow('额度');await expect(claim(members,user.id,'video.generate')).rejects.toThrow('会员');const other=await auth.register('another','test-long-password');await expect(members.modelRequest(id,other.id)).rejects.toThrow('不存在');await expect(members.order(o.id,other.id)).rejects.toThrow('不存在');});
  it('treats -1 as unlimited across model and media while 0 still disables a feature',async()=>{
   const {members,user,admin,plan}=await setup();
-  const unlimited={...plan,limits:{model:-1,search:0,image:-1,video:-1}};
+  const unlimited={...plan,limits:{model:-1,image:-1,video:-1}};
   expect(planSchema.safeParse({...unlimited,limits:{...unlimited.limits,model:-2}}).success).toBe(false);
   await members.savePlan(unlimited,admin);
   const order=await members.createOrder(user,plan.id,'wechat');
   await members.settle(order.id,'wechat',plan.priceCents,'unlimited-quota');
   expect((await members.status(user.id)).features).toEqual(['model','image','video']);
-  await expect(members.requireFeature(user.id,'search')).rejects.toThrow('订阅');
-  await expect(members.consume(user.id,'search')).rejects.toThrow('会员');
-  await Promise.all(Array.from({length:5},()=>members.consume(user.id,'model')));
-  await Promise.all(Array.from({length:3},()=>members.claimAsset(randomUUID(),user.id,'image')));
-  await Promise.all(Array.from({length:2},()=>members.claimAsset(randomUUID(),user.id,'video')));
+  await Promise.all(Array.from({length:5},()=>claim(members,user.id,'text.generate')));
+  await Promise.all(Array.from({length:3},()=>claim(members,user.id,'image.generate')));
+  await Promise.all(Array.from({length:2},()=>claim(members,user.id,'video.generate')));
   const usage=(await members.status(user.id)).usage;
   expect(Object.fromEntries(usage.map(row=>[row.feature,Number(row.used)]))).toMatchObject({model:5,image:3,video:2});
   await members.revoke(user.id,admin);
-  await expect(members.consume(user.id,'model')).rejects.toThrow('会员');
-  await expect(members.claimAsset(randomUUID(),user.id,'image')).rejects.toThrow('会员');
+  await expect(claim(members,user.id,'text.generate')).rejects.toThrow('会员');
+  await expect(claim(members,user.id,'image.generate')).rejects.toThrow('会员');
  });
  it('saves daily quotas above the previous caps for every service',async()=>{
   const {members,user,admin,plan}=await setup();
-  const limits={model:20000,search:20000,image:2000,video:2000};
+  const limits={model:20000,image:2000,video:2000};
   await members.savePlan({...plan,limits},admin);
   expect((await members.plans(true)).find(item=>item.id===plan.id)?.limits).toEqual(limits);
   await members.setMembership(user.id,plan.id,new Date(Date.now()+86400000).toISOString(),'调整服务额度',admin);

@@ -1,0 +1,28 @@
+import {it,expect} from 'vitest';
+import {randomUUID} from 'node:crypto';
+import {generateText,generateSpeech,textGenerationSchema} from '../packages/automation/src/model-gateway';
+import {defaults,type SecretSettings} from '../packages/automation/src/types';
+import type {requestBytes} from '../packages/automation/src/network';
+
+const config:SecretSettings={...defaults,baseUrl:'http://127.0.0.1:12345/v1',localModel:true,model:'fixture-model',format:'json_object',apiKey:'',minimaxKey:'',verifiedAt:null,revision:'fixture'};
+const request=()=>textGenerationSchema.parse({action:'text.generate',id:randomUUID(),messages:[{role:'system',content:'Desktop-owned task policy'},{role:'user',content:'Summarize fixture'}],jsonSchema:{type:'object',properties:{summary:{type:'string'}},required:['summary'],additionalProperties:false}});
+it('passes desktop messages unchanged and returns provider text without server business prompts',async()=>{
+  let sent:unknown;
+  const transport:typeof requestBytes=async(_url,options)=>{sent=JSON.parse(String(options.body));return {status:200,headers:{},body:Buffer.from(JSON.stringify({model:'fixture-model',choices:[{finish_reason:'stop',message:{content:'{"summary":"完成"}'}}]})),url:_url};};
+  const result=await generateText(config,request(),transport);
+  expect(result.text).toBe('{"summary":"完成"}');
+  expect(sent).toMatchObject({model:'fixture-model',messages:[{role:'system',content:'Desktop-owned task policy'},{role:'user',content:'Summarize fixture'}],response_format:{type:'json_object'}});
+  expect(JSON.stringify(sent)).not.toContain('AgentSale, an evidence-based');
+});
+it('rejects invalid provider success bodies without fabricating a result',async()=>{
+  const transport:typeof requestBytes=async(url)=>({status:200,headers:{},body:Buffer.from('<html>not a model reply</html>'),url});
+  await expect(generateText(config,request(),transport)).rejects.toMatchObject({code:'MODEL_RESPONSE'});
+});
+it('decodes bounded speech output from the configured audio model',async()=>{
+  const audio=Buffer.concat([Buffer.from('ID3'),Buffer.alloc(12,1)]);
+  let authorization='';
+  const transport:typeof requestBytes=async(url,options)=>{authorization=String(options.headers?.Authorization);return {status:200,headers:{},body:Buffer.from(JSON.stringify({base_resp:{status_code:0},data:{status:2,audio:audio.toString('hex')},extra_info:{usage_characters:2,audio_length:300}})),url};};
+  const result=await generateSpeech({...config,minimaxKey:'fixture-secret',minimax:{...config.minimax,enabled:true}},'你好',transport);
+  expect(result).toMatchObject({mime:'audio/mpeg',usage:{characters:2,durationMs:300}});
+  expect(result.bytes).toEqual(audio);expect(authorization).toBe('Bearer fixture-secret');
+});

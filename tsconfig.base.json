@@ -17,9 +17,8 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@agentsale/automation": ["packages/automation/src/index.ts"],
-      "@agentsale/contracts": [
-        "packages/contracts/src/index.ts"
+      "@agentsale/automation": [
+        "packages/automation/src/index.ts"
       ],
       "@agentsale/domain": [
         "packages/domain/src/index.ts"

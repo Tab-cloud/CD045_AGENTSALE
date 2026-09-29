@@ -3,13 +3,13 @@ import {useEffect,useState} from 'react';
 import {platformRequest} from '../../console/components/platform-account';
 import {PaymentEditor,type PaymentConfiguration} from './payment-editor';
 
-type Feature='model'|'search'|'image'|'video';
+type Feature='model'|'image'|'video'|'audio';
 type Plan={id:string;name:string;priceCents:number;days:number;published:boolean;limits:Record<Feature,number>};
 type PlanDraft={id:string;name:string;price:string;days:string;published:boolean;limits:Record<Feature,string>};
 type Data={plans:Plan[];payment:PaymentConfiguration};
-const initial:Plan={id:'standard',name:'聆风会员',priceCents:0,days:30,published:false,limits:{model:40,search:20,image:5,video:2}};
-const features=[['model','模型调用'],['search','网页与知识库检索'],['image','图片生成'],['video','视频生成']] as const;
-const editPlan=(plan:Plan):PlanDraft=>({...plan,price:String(plan.priceCents/100),days:String(plan.days),limits:{model:String(plan.limits.model),search:String(plan.limits.search),image:String(plan.limits.image),video:String(plan.limits.video)}});
+const initial:Plan={id:'standard',name:'聆风会员',priceCents:0,days:30,published:false,limits:{model:40,image:5,video:2,audio:0}};
+const features=[['model','文本模型调用'],['image','图片生成'],['video','视频生成'],['audio','音频模型调用']] as const;
+const editPlan=(plan:Plan):PlanDraft=>({...plan,price:String(plan.priceCents/100),days:String(plan.days),limits:{model:String(plan.limits.model),image:String(plan.limits.image),video:String(plan.limits.video),audio:String(plan.limits.audio??0)}});
 
 function validatedPlan(draft:PlanDraft):Plan{
   const price=Number(draft.price),days=Number(draft.days);
@@ -47,7 +47,7 @@ export function BillingSettings(){
           {features.map(([feature,label])=><label key={feature}>{label}每日额度（-1 不限，0 不包含）<input type="text" inputMode="text" pattern="-1|0|[1-9][0-9]*" title="填写 -1 表示不限，或填写非负整数" required value={draft.limits[feature]} onChange={event=>setDraft({...draft,limits:{...draft.limits,[feature]:event.target.value}})}/></label>)}
         </div>
         <label><input type="checkbox" checked={draft.published} onChange={event=>setDraft({...draft,published:event.target.checked})}/>发布到会员中心</label>
-        <p>价格和权益会保存到订单中。修改套餐不追溯已购买权益；每次网页搜索、正文读取或知识库检索各计 1 次检索额度；额度按 UTC 日期重置；-1 表示不限次数，但仍记录调用量。失败或未确认提交也计入。</p>
+        <p>价格和权益会保存到订单中。修改套餐不追溯已购买权益；网页搜索、正文读取与本地知识库检索由桌面端执行，不占用模型额度；额度按 UTC 日期重置；-1 表示不限次数，但仍记录调用量。失败或未确认提交也计入。</p>
         <button className="account-primary" disabled={busy}>{busy?'保存中…':'保存套餐'}</button>
       </form>
     </details>
