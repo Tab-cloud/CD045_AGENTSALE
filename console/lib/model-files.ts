@@ -1,4 +1,5 @@
-import {mkdir,readFile,readdir,rename,stat,unlink,writeFile} from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
+import {mkdir,readdir,rename,stat,unlink,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -23,4 +24,8 @@ export async function storeModelFile(owner:string,id:string,mime:Mime,bytes:Buff
     if((await stat(candidate)).mtimeMs<expiry)await unlink(candidate).catch(()=>{});
   }
 }
-export async function readModelFile(owner:string,id:string,mime:Mime){return readFile(await name(owner,id,mime));}
+export async function streamModelFile(owner:string,id:string,mime:Mime){
+  const filename=await name(owner,id,mime);
+  await stat(filename);
+  return createReadStream(filename);
+}

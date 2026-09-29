@@ -3,6 +3,7 @@ import {DomainError} from '@agentsale/domain';
 import {session,platform} from '../../../../lib/platform';
 import {failure} from '../../../../lib/local-runtime';
 import {jsonBody} from '../../../../lib/server-access';
+import {busyResponse,concurrencyGate} from '../../../../lib/concurrency';
 export const runtime='nodejs';export const dynamic='force-dynamic';
 export async function GET(request:Request){try{const user=await session(request),p=await platform();return Response.json({user,subscription:await p.members.status(user.id),plans:await p.members.plans(),channels:await p.payments.channels(),orders:await p.members.orders(user.id)},{headers:{'Cache-Control':'no-store'}});}catch(e){return failure(e);}}
 export async function POST(request:Request){try{
@@ -11,6 +12,9 @@ export async function POST(request:Request){try{
     z.object({planId:z.string().max(40),channel:z.enum(['wechat','alipay']),device:z.enum(['pc','mobile']).optional()}).strict(),
     z.object({action:z.enum(['check','close']),orderId:z.string().regex(/^[a-f0-9]{32}$/)}).strict(),
   ]).parse(await jsonBody(request));
+  const release=concurrencyGate.tryAcquire('payment',undefined,'action' in b?b.orderId:undefined);
+  if(!release)return busyResponse();
+  try{
   if('action' in b){
     const order=await p.members.order(b.orderId,user.id);
     if(order.status==='paid'||b.action==='close'&&order.status==='closed')return Response.json({order},{headers:{'Cache-Control':'no-store'}});
@@ -29,4 +33,5 @@ export async function POST(request:Request){try{
     console.error('Payment checkout failed:',{orderId:order.id,channel:order.channel,...(DomainError.is(error)?{code:error.code,status:error.status,reason:error.message}:{code:'UNEXPECTED',type:error instanceof Error?error.name:typeof error})});
     return Response.json({code:'PAYMENT_CHECKOUT_UNCONFIRMED',message:'支付请求未确认，请查看订单记录并联系管理员。订单尚未开通会员。',order},{status:DomainError.is(error)&&error.status===503?503:502,headers:{'Cache-Control':'no-store'}});
   }
+  }finally{release();}
 }catch(e){if(e instanceof z.ZodError)return Response.json({message:'请选择套餐与支付方式'},{status:400});return failure(e);}}

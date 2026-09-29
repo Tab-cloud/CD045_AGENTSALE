@@ -3,6 +3,7 @@ import {z} from 'zod';
 import {boundary,platform,session,cookie} from '../../../../lib/platform';
 import {failure} from '../../../../lib/local-runtime';
 import {jsonBody} from '../../../../lib/server-access';
+import {busyResponse,concurrencyGate} from '../../../../lib/concurrency';
 export const runtime='nodejs';export const dynamic='force-dynamic';
 const input=z.discriminatedUnion('action',[
   z.object({action:z.literal('send'),phone:z.string().max(20),purpose:z.enum(['register','bind','login','wechat'])}).strict(),
@@ -30,6 +31,10 @@ export async function POST(request:Request){try{
   if(body.purpose==='bind')await session(request,true);
   if(body.purpose==='wechat')await p.auth.requireWechatPending(pendingToken(request));
   const source=request.headers.get('x-real-ip')||request.headers.get('x-forwarded-for')?.split(',')[0]||'unknown',requesterHash=createHash('sha256').update(source).digest('hex');
-  await p.auth.requestPhoneCode(body.phone,body.purpose,requesterHash,p.authServices.sendSms,p.authServices.codeHash);
-  return Response.json({ok:true,message:'验证码已发送，5 分钟内有效'},{headers:{'Cache-Control':'no-store'}});
+  const release=concurrencyGate.tryAcquire('sms');
+  if(!release)return busyResponse();
+  try{
+    await p.auth.requestPhoneCode(body.phone,body.purpose,requesterHash,p.authServices.sendSms,p.authServices.codeHash);
+    return Response.json({ok:true,message:'验证码已发送，5 分钟内有效'},{headers:{'Cache-Control':'no-store'}});
+  }finally{release();}
 }catch(error){if(error instanceof z.ZodError)return Response.json({message:'手机号或验证码参数无效'},{status:400});return failure(error);}}

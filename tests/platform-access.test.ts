@@ -15,6 +15,17 @@ const req=(service:string,token?:string,body?:unknown)=>new Request(base+'/api/v
 beforeAll(async()=>{root=await mkdtemp(path.join(tmpdir(),'lingfeng-access-'));process.env.AGENTSALE_LOCAL_DEMO='1';process.env.AGENTSALE_DATA_DIR=path.join(root,'pglite');process.env.LINGFENG_SETUP_TOKEN='fixture-bootstrap-not-production';const a=await auth.POST(req('auth',undefined,{action:'setup',username:'adminfixture',password:'fixture-password-long',setupToken:process.env.LINGFENG_SETUP_TOKEN,desktop:true}));expect(a.status).toBe(200);adminToken=(await a.json()).token;const b=await auth.POST(req('auth',undefined,{action:'register',username:'memberfixture',password:'fixture-password-long',desktop:true}));expect(b.status).toBe(200);memberToken=(await b.json()).token;},30000);
 afterAll(async()=>{await (await getRepository()).close();await rm(root,{recursive:true,force:true});});
 it('rejects anonymous configuration and service endpoints',async()=>{for(const endpoint of [config,creativeConfig,billing,dashboard,models])expect((await endpoint.GET(req('test'))).status).toBe(401);expect((await models.POST(req('models',undefined,{action:'text.generate',id:randomUUID(),messages:[{role:'user',content:'test'}]}))).status).toBe(401);});
+it('rejects excess model input before reserving member usage',async()=>{
+ const {platform}=await import('../console/lib/platform');const {concurrencyGate}=await import('../console/lib/concurrency');
+ const p=await platform(),member=await p.auth.require(memberToken),before=(await p.members.status(member.id)).usage;
+ const first=concurrencyGate.tryAcquire('modelInput',member.id),second=concurrencyGate.tryAcquire('modelInput',member.id);
+ expect(first&&second).toBeTruthy();
+ try{
+  const response=await models.POST(req('models',memberToken,{action:'text.generate',id:randomUUID(),messages:[{role:'user',content:'test'}]}));
+  expect(response.status).toBe(429);expect(await response.json()).toMatchObject({code:'SERVICE_BUSY'});
+  expect((await p.members.status(member.id)).usage).toEqual(before);
+ }finally{first?.();second?.();}
+});
 it('blocks non-admin settings and the legacy shared workspace',async()=>{for(const endpoint of [config,creativeConfig,billing,dashboard])expect((await endpoint.GET(req('test',memberToken))).status).toBe(403);expect((await config.GET(req('admin',adminToken))).status).toBe(200);const overview=await dashboard.GET(req('dashboard',adminToken));expect(overview.status).toBe(200);expect((await overview.json()).totals).toMatchObject({users:1,activeMembers:0});});
 it('loads member accounts only through the paged administrator query',async()=>{
  const settings=await billing.GET(req('membership-admin',adminToken));
@@ -57,7 +68,7 @@ it('reserves model quota exactly once for a request ID and rejects conflicting c
  expect((await p.members.status(account.user.id)).usage).toContainEqual({feature:'model',used:1});
 });
 it('delivers a completed model file only to its owner',async()=>{
- const {platform}=await import('../console/lib/platform');const {storeModelFile}=await import('../console/lib/model-files');
+ const {platform}=await import('../console/lib/platform');const {storeModelFile}=await import('../console/lib/model-files');const {concurrencyGate}=await import('../console/lib/concurrency');
  const p=await platform(),admin=await p.auth.require(adminToken,true);
  const login=await auth.POST(req('auth',undefined,{action:'register',username:'imagefilefixture',password:'fixture-password-long',desktop:true})),account=await login.json();
  await p.members.savePlan({id:'model-file-test',name:'模型文件测试',priceCents:1,days:1,published:true,limits:{model:0,image:1,video:0}},admin);
@@ -68,4 +79,8 @@ it('delivers a completed model file only to its owner',async()=>{
  await p.members.finishModelRequest(id,account.user.id,{id,status:'completed',mime:'image/png',model:'fixture'});
  const response=await models.GET(req('models?asset='+id,account.token));expect(response.status).toBe(200);expect(response.headers.get('content-type')).toBe('image/png');expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
  expect((await models.GET(req('models?asset='+id,memberToken))).status).toBe(404);
+ const first=concurrencyGate.tryAcquire('asset','other-a'),second=concurrencyGate.tryAcquire('asset','other-b');
+ expect(first&&second).toBeTruthy();
+ try{const busy=await models.GET(req('models?asset='+id,account.token));expect(busy.status).toBe(429);expect(busy.headers.get('Retry-After')).toBe('5');}
+ finally{first?.();second?.();}
 });

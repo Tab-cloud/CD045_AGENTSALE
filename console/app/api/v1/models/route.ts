@@ -1,11 +1,13 @@
 import {createHash} from 'node:crypto';
+import {Readable} from 'node:stream';
 import {z} from 'zod';
 import {textGenerationSchema,imageGenerationSchema,videoGenerationSchema,videoPollSchema,audioSpeechSchema,generateText,generateSpeech} from '../../../../../packages/automation/src/model-gateway';
 import {assertProvider} from '../../../../../packages/automation/src/providers';
 import {FlowError} from '../../../../../packages/automation/src/types';
 import {modelMediaService} from '../../../../lib/model-media-service';
 import {failure,modelVault} from '../../../../lib/local-runtime';
-import {readModelFile,storeModelFile} from '../../../../lib/model-files';
+import {streamModelFile,storeModelFile} from '../../../../lib/model-files';
+import {busyResponse,concurrencyGate,type Lane} from '../../../../lib/concurrency';
 import {session,platform} from '../../../../lib/platform';
 import {jsonBody} from '../../../../lib/server-access';
 
@@ -20,8 +22,13 @@ export async function GET(request:Request){
       const entry=await p.members.modelRequest(z.string().uuid().parse(asset),user.id);
       if(entry.status!=='completed'||!['image/png','video/mp4','audio/mpeg'].includes(String(entry.result?.mime)))return Response.json({code:'MODEL_RESULT_UNAVAILABLE',message:'模型结果尚未生成或已过期'},{status:404});
       const mime=entry.result!.mime as 'image/png'|'video/mp4'|'audio/mpeg';
-      try{return new Response(new Uint8Array(await readModelFile(user.id,asset,mime)),{headers:{'Content-Type':mime,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});}
-      catch{return Response.json({code:'MODEL_RESULT_EXPIRED',message:'模型结果临时文件已过期'},{status:410});}
+      const release=concurrencyGate.tryAcquire('asset',user.id);
+      if(!release)return busyResponse();
+      try{
+        const stream=await streamModelFile(user.id,asset,mime);
+        stream.once('close',release);
+        return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>,{headers:{'Content-Type':mime,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+      }catch{release();return Response.json({code:'MODEL_RESULT_EXPIRED',message:'模型结果临时文件已过期'},{status:410});}
     }
     const [settings,creative,member]=await Promise.all([(await modelVault()).get(),(await modelMediaService()).configuration(),p.members.status(user.id)]);
     const allowed=(feature:'model'|'image'|'video'|'audio')=>member.features.includes(feature);
@@ -37,8 +44,15 @@ export async function GET(request:Request){
 
 export async function POST(request:Request){
   try{
-    const user=await session(request,true),body=z.union([textGenerationSchema,imageGenerationSchema,videoGenerationSchema,videoPollSchema,audioSpeechSchema]).parse(await jsonBody(request,5_600_000)),p=await platform();
+    const user=await session(request,true);
+    const releaseInput=concurrencyGate.tryAcquire('modelInput',user.id);
+    if(!releaseInput)return busyResponse();
+    const body=await (async()=>{try{return z.union([textGenerationSchema,imageGenerationSchema,videoGenerationSchema,videoPollSchema,audioSpeechSchema]).parse(await jsonBody(request,5_600_000));}finally{releaseInput();}})();
+    const p=await platform();
     if(body.action==='video.poll'){
+      const release=concurrencyGate.tryAcquire('videoPoll',user.id,body.id);
+      if(!release)return busyResponse();
+      try{
       const existing=await p.members.modelRequest(body.id,user.id);
       if(existing.capability!=='video.generate')return Response.json({code:'MODEL_REQUEST_CONFLICT',message:'模型请求能力不匹配'},{status:409});
       if(existing.status==='completed'||existing.status==='failed')return Response.json({id:body.id,status:existing.status,message:existing.status==='completed'?'视频已生成，可保存到桌面':'视频模型生成失败',taskId:'model-gateway-v1',...(existing.status==='completed'?{mime:existing.result?.mime,model:existing.result?.model}:{})},{headers:{'Cache-Control':'no-store'}});
@@ -49,6 +63,7 @@ export async function POST(request:Request){
       await storeModelFile(user.id,body.id,'video/mp4',result.bytes!);
       await p.members.finishModelRequest(body.id,user.id,{id:body.id,status:'completed',message:'视频已生成，可保存到桌面',taskId:'model-gateway-v1',mime:'video/mp4',model:result.model},'completed');
       return Response.json({id:body.id,status:'completed',message:'视频已生成，可保存到桌面',taskId:'model-gateway-v1',mime:'video/mp4',model:result.model},{headers:{'Cache-Control':'no-store'}});
+      }finally{release();}
     }
     const config=await (await modelVault()).get();
     if(body.action==='text.generate')assertProvider(config,false);
@@ -58,6 +73,10 @@ export async function POST(request:Request){
       const provider=await (await modelMediaService()).configuration();
       if(body.action==='video.generate'?!provider.video.enabled||!provider.hasVideoKey:!provider.image.enabled||!provider.hasImageKey||body.action==='image.edit'&&!provider.image.referenceEditing)throw new FlowError('CREATIVE_UNCONFIGURED','对应模型未配置或未启用');
     }
+    const lane:Lane=body.action==='text.generate'?'text':body.action==='video.generate'?'videoSubmit':body.action==='audio.speech'?'audio':'image';
+    const release=concurrencyGate.tryAcquire(lane,user.id);
+    if(!release)return busyResponse();
+    try{
     const hash=createHash('sha256').update(JSON.stringify(body)).digest('hex');
     const claim=await p.members.claimModelRequest(body.id,user.id,hash,body.action);
     if(!claim.created){
@@ -86,6 +105,7 @@ export async function POST(request:Request){
       await p.members.finishModelRequest(body.id,user.id,null);
       throw error;
     }
+    }finally{release();}
   }catch(error){
     if(error instanceof z.ZodError)return Response.json({code:'MODEL_INPUT',message:'模型请求格式无效'},{status:400});
     return failure(error);
