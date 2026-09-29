@@ -1,7 +1,6 @@
 packages:
-  - apps/web/*
-  - apps/web/packages/*
-  - apps/agent/*
+  - console
+  - admin-console
   - packages/*
 overrides:
   urllib@4.9.0: 4.9.1

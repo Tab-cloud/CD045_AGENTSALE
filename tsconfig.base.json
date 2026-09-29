@@ -17,15 +17,15 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@agentsale/automation": ["apps/web/packages/automation/src/index.ts"],
+      "@agentsale/automation": ["packages/automation/src/index.ts"],
       "@agentsale/contracts": [
-        "apps/web/packages/contracts/src/index.ts"
+        "packages/contracts/src/index.ts"
       ],
       "@agentsale/domain": [
-        "apps/web/packages/domain/src/index.ts"
+        "packages/domain/src/index.ts"
       ],
       "@agentsale/database": [
-        "apps/web/packages/database/src/index.ts"
+        "packages/database/src/index.ts"
       ],
       "@agentsale/ui/*": [
         "packages/ui/src/*"
