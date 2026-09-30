@@ -1,4 +1,4 @@
-type TextEvent = {type:'snapshot'|'delta'|'completed'|'failed';text?:string;message?:string};
+type TextEvent = {type:'snapshot'|'delta'|'completed'|'failed';text?:string;message?:string;code?:string;safeToFailover?:boolean};
 type Listener = (event:TextEvent)=>void;
 type ActiveStream = {text:string;listeners:Set<Listener>};
 
@@ -27,11 +27,11 @@ export function publishTextDelta(id:string,delta:string){
   }
 }
 
-export function finishTextStream(id:string,result:{text?:string;message?:string}){
+export function finishTextStream(id:string,result:{text?:string;message?:string;code?:string;safeToFailover?:boolean}){
   const active=streams.get(id);
   if(!active)return;
   streams.delete(id);
-  const event:TextEvent=result.text?{type:'completed',text:result.text}:{type:'failed',message:result.message||'模型请求未能完成'};
+  const event:TextEvent=result.text?{type:'completed',text:result.text}:{type:'failed',message:result.message||'模型请求未能完成',code:result.code,safeToFailover:result.safeToFailover};
   for(const listener of active.listeners){try{listener(event);}catch{ /* A disconnected desktop cannot interrupt a paid model call. */ }}
   active.listeners.clear();
 }

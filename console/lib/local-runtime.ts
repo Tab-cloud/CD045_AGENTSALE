@@ -44,10 +44,10 @@ export async function modelVault(){
   await getRepository();
   return runtime.lingfengModelVault??=createVault(path.join(modelRoot(),'private'));
 }
-export async function verifyConfiguredModel(){
+export async function verifyConfiguredModel(providerId:'standard'|'minimax'='standard'){
   const vault=await modelVault(),settings=await vault.get();
-  assertProvider(settings,false);
-  const result=await verifyModel(settings);
+  if(providerId==='standard')assertProvider(settings,false);
+  const result=await verifyModel(settings,providerId);
   await vault.verified(settings.revision);
   return {verified:true,model:result.model};
 }
@@ -57,7 +57,7 @@ export async function auditConfiguration(action:string,actor:string,detail:strin
 }
 export function failure(error: unknown) {
   if (DomainError.is(error)) return Response.json({ code: error.code, message: error.message }, { status: error.status });
-  if (FlowError.is(error)) return Response.json({code:error.code,message:error.message},{status:422});
+  if (FlowError.is(error)) return Response.json({code:error.code,message:error.message,...(error.code==='PROVIDER_UNAVAILABLE'?{safeToFailover:true}:{})},{status:error.code==='PROVIDER_UNAVAILABLE'?503:422});
   console.error('Local operation failed:', error instanceof Error ? error.message : 'unknown');
   return Response.json({ code: 'LOCAL_OPERATION_FAILED', message: '本地操作未完成，请稍后重试。已保存的数据不会因此清空。' }, { status: 500 });
 }

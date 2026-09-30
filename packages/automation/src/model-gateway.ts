@@ -1,11 +1,12 @@
 import {z} from 'zod';
 import {requestBytes} from './network';
 import {assertProvider} from './providers';
-import {FlowError,type SecretSettings} from './types';
+import {FlowError,providerRejectedBeforeExecution,type SecretSettings} from './types';
 
 const message=z.object({role:z.enum(['system','user','assistant']),content:z.string().max(120_000)}).strict();
 export const textGenerationSchema=z.object({
   action:z.literal('text.generate'),
+  providerId:z.enum(['standard','minimax']),
   id:z.string().uuid(),
   messages:z.array(message).min(1).max(40),
   jsonSchema:z.record(z.string(),z.unknown()).optional(),
@@ -14,13 +15,15 @@ export const textGenerationSchema=z.object({
   if(request.jsonSchema&&JSON.stringify(request.jsonSchema).length>16_000)ctx.addIssue({code:'custom',message:'输出结构超出上限'});
 });
 export type TextGeneration=z.infer<typeof textGenerationSchema>;
-export const imageGenerationSchema=z.object({action:z.enum(['image.generate','image.edit']),id:z.string().uuid(),prompt:z.string().trim().min(1).max(2500),reference:z.string().max(5_333_336).optional()}).strict().superRefine((request,ctx)=>{
-  if(request.action==='image.edit'&&!request.reference)ctx.addIssue({code:'custom',message:'图片编辑需要参考图'});
-  if(request.action==='image.generate'&&request.reference)ctx.addIssue({code:'custom',message:'图片生成不接受参考图'});
+const mediaParameters=z.record(z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),z.union([z.string().max(150),z.number().finite(),z.boolean()])).refine(value=>JSON.stringify(value).length<=2000,'模型参数过长');
+export const imageGenerationSchema=z.object({action:z.enum(['image.generate','image.edit']),providerId:z.enum(['standard','minimax']),id:z.string().uuid(),prompt:z.string().trim().min(1).max(2500),reference:z.string().max(5_333_336).optional(),referenceMime:z.enum(['image/png','image/jpeg','image/webp']).optional(),parameters:mediaParameters.optional()}).strict().superRefine((request,ctx)=>{
+  if(request.action==='image.edit'&&(!request.reference||!request.referenceMime))ctx.addIssue({code:'custom',message:'图片编辑需要参考图及类型'});
+  if(request.action==='image.generate'&&(request.reference||request.referenceMime))ctx.addIssue({code:'custom',message:'图片生成不接受参考图'});
+  if(request.action==='image.edit'&&request.providerId!=='standard')ctx.addIssue({code:'custom',message:'聚合连接暂不支持本地参考图编辑'});
 });
-export const videoGenerationSchema=z.object({action:z.literal('video.generate'),id:z.string().uuid(),prompt:z.string().trim().min(1).max(2500)}).strict();
+export const videoGenerationSchema=z.object({action:z.literal('video.generate'),providerId:z.enum(['standard','minimax']),id:z.string().uuid(),prompt:z.string().trim().min(1).max(2500),parameters:mediaParameters.optional()}).strict();
 export const videoPollSchema=z.object({action:z.literal('video.poll'),id:z.string().uuid()}).strict();
-export const audioSpeechSchema=z.object({action:z.literal('audio.speech'),id:z.string().uuid(),text:z.string().trim().min(1).max(600)}).strict();
+export const audioSpeechSchema=z.object({action:z.literal('audio.speech'),providerId:z.enum(['standard','minimax']),id:z.string().uuid(),text:z.string().trim().min(1).max(600),voiceId:z.string().min(1).max(100),parameters:mediaParameters.optional()}).strict();
 
 function textStreamDecoder(fallbackModel:string,onDelta?:(delta:string)=>void){
   const decoder=new TextDecoder('utf-8',{fatal:true});
@@ -67,7 +70,11 @@ function textStreamDecoder(fallbackModel:string,onDelta?:(delta:string)=>void){
 }
 
 export async function generateText(config:SecretSettings,request:TextGeneration,transport:typeof requestBytes=requestBytes,onDelta?:(delta:string)=>void){
-  assertProvider(config,false);
+  if(request.providerId==='minimax'){
+    if(!config.minimax.aggregate||!config.aggregateKey)throw new FlowError('PROVIDER_UNAVAILABLE','MiniMax 聚合文本连接未启用');
+    config={...config,baseUrl:config.minimax.baseUrl,model:config.minimax.textModel,localModel:false,format:'prompt_json',protocol:'minimax',apiKey:config.aggregateKey};
+  }
+  try{assertProvider(config,false);}catch(error){if(FlowError.is(error)&&error.code==='MODEL_UNCONFIGURED')throw new FlowError('PROVIDER_UNAVAILABLE','所选文本连接未配置或未启用');throw error;}
   const messages=request.messages.map(message=>({...message}));
   const body:Record<string,unknown>={model:config.model,messages,stream:true};
   if(request.jsonSchema){
@@ -93,27 +100,26 @@ export async function generateText(config:SecretSettings,request:TextGeneration,
       stream.feed(chunk);
     }
   });
-  if(response.status!==200)throw new FlowError('MODEL_HTTP',`模型服务返回 HTTP ${response.status}，请检查模型、权限及额度`,response.status===429||response.status>=500);
+  if(response.status!==200)throw new FlowError(providerRejectedBeforeExecution(response.status)?'PROVIDER_UNAVAILABLE':'MODEL_HTTP',`模型服务返回 HTTP ${response.status}，请检查模型、权限及额度`,response.status>=500&&!providerRejectedBeforeExecution(response.status));
   if(!/^text\/event-stream(?:;|$)/i.test(String(response.headers['content-type']||'')))throw new FlowError('MODEL_STREAM_UNSUPPORTED','模型服务未提供流式输出，请管理员测试或更换接口');
   if(!received)stream.feed(response.body);
   stream.feed(Buffer.alloc(0),true);
   return stream.result();
 }
 
-export async function generateSpeech(config:SecretSettings,text:string,transport:typeof requestBytes=requestBytes){
-  if(!config.minimaxKey||!config.minimax.enabled)throw new FlowError('AUDIO_UNCONFIGURED','音频模型未配置或未启用');
-  const response=await transport(config.minimax.baseUrl+'/t2a_v2',{
-    method:'POST',headers:{Authorization:'Bearer '+config.minimaxKey,'Content-Type':'application/json'},
-    body:JSON.stringify({model:config.minimax.speechModel,text,stream:false,voice_setting:{voice_id:config.minimax.voiceId,speed:1,vol:1,pitch:0},audio_setting:{sample_rate:32000,bitrate:128000,format:'mp3',channel:1},output_format:'hex'}),
+export async function generateSpeech(config:SecretSettings,text:string,voiceId:string,providerId:'standard'|'minimax',parameters:Record<string,string|number|boolean>={},transport:typeof requestBytes=requestBytes){
+  const key=providerId==='minimax'?config.aggregateKey:config.minimaxKey;
+  if(!key||!(providerId==='minimax'?config.minimax.aggregate&&config.minimax.enabled:config.independentAudioEnabled))throw new FlowError('PROVIDER_UNAVAILABLE','音频模型未配置或未启用');
+  if(!config.minimax.voices.some(voice=>voice.id===voiceId))throw new FlowError('AUDIO_VOICE','所选音色不在管理员开放列表中');
+  const voiceSetting=Object.fromEntries(Object.entries(parameters).filter(([name])=>['speed','vol','pitch'].includes(name)));
+  const audioSetting=Object.fromEntries(Object.entries(parameters).filter(([name])=>['sample_rate','bitrate','format','channel'].includes(name)));
+  const response=await transport((providerId==='minimax'?config.minimax.baseUrl:config.independentAudioBaseUrl)+'/t2a_v2',{
+    method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
+    body:JSON.stringify({model:config.minimax.speechModel,text,stream:false,voice_setting:{...voiceSetting,voice_id:voiceId},audio_setting:{sample_rate:32000,bitrate:128000,format:'mp3',channel:1,...audioSetting},output_format:'hex'}),
     trustedMiniMax:true,timeout:120000,maxBytes:20_000_000
   });
-  if(response.status!==200)throw new FlowError('AUDIO_HTTP',`音频模型返回 HTTP ${response.status}`);
-  let data:unknown;
-  try{data=JSON.parse(response.body.toString());}catch{throw new FlowError('AUDIO_RESPONSE','音频模型响应格式无效');}
-  const result=data as {base_resp?:{status_code?:number};data?:{status?:number;audio?:unknown};extra_info?:{usage_characters?:number;audio_length?:number}};
-  const hex=result.data?.audio;
-  if(result.base_resp?.status_code!==0||result.data?.status!==2||typeof hex!=='string'||hex.length<8||hex.length>40_000_000||hex.length%2!==0||!/^[\da-f]+$/i.test(hex))throw new FlowError('AUDIO_RESPONSE','音频模型未返回完整音频');
-  const bytes=Buffer.from(hex,'hex');
-  if(bytes.subarray(0,3).toString()!=='ID3'&&!(bytes[0]===0xff&&(bytes[1]&0xe0)===0xe0))throw new FlowError('AUDIO_RESPONSE','音频模型未返回 MP3 数据');
-  return {bytes,mime:'audio/mpeg',model:config.minimax.speechModel,usage:{characters:result.extra_info?.usage_characters??null,durationMs:result.extra_info?.audio_length??null}};
+  if(response.status!==200)throw new FlowError(providerRejectedBeforeExecution(response.status)?'PROVIDER_UNAVAILABLE':'AUDIO_HTTP',`音频模型返回 HTTP ${response.status}`,response.status>=500&&!providerRejectedBeforeExecution(response.status));
+  let provider:any;try{provider=JSON.parse(response.body.toString());}catch{throw new FlowError('AUDIO_RESPONSE','音频模型响应格式无效');}
+  if(provider.base_resp?.status_code!==0||typeof provider.data?.audio!=='string')throw new FlowError('AUDIO_RESPONSE','音频模型未完成生成');
+  return {bytes:response.body,mime:'application/json' as const,model:config.minimax.speechModel};
 }

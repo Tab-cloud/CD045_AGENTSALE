@@ -29,10 +29,11 @@ export async function processNextTextRequest(complete:Completion=generateText):P
   }catch(error){
     const uncertain=submitted&&(!FlowError.is(error)||error.retryable||['NETWORK_TIMEOUT','NETWORK_ERROR','DNS_TIMEOUT'].includes(error.code));
     const status=uncertain?'unknown':'failed';
-    const result={code:uncertain?'MODEL_REQUEST_UNCERTAIN':'MODEL_REQUEST_FAILED',
-      message:uncertain?'模型提交结果无法确认；不会重复提交':'模型请求失败，请检查模型配置或稍后创建新任务'};
+    const unavailable=!uncertain&&FlowError.is(error)&&error.code==='PROVIDER_UNAVAILABLE';
+    const result={code:uncertain?'MODEL_REQUEST_UNCERTAIN':unavailable?'PROVIDER_UNAVAILABLE':'MODEL_REQUEST_FAILED',safeToFailover:unavailable,
+      message:uncertain?'模型提交结果无法确认；不会重复提交':unavailable?'当前模型连接明确未受理请求，可尝试下一供应商':'模型请求失败，请检查模型配置或稍后创建新任务'};
     await p.members.finishModelRequest(job.id,job.userId,result,status);
-    finishTextStream(job.id,{message:result.message});
+    finishTextStream(job.id,{message:result.message,code:result.code,safeToFailover:result.safeToFailover});
   }
   return true;
 }

@@ -39,11 +39,12 @@ export function createMembership(repo:Repository,workspace:string){
     if(!m||m.status!=='active'||Date.parse(m.expiresAt)<=Date.now()||!includesFeature(limit))throw new DomainError('SUBSCRIPTION_REQUIRED','会员未开通模型服务或已到期',403);
     if(limit!==-1){const used=Number((await tx.execute(sql`SELECT count(*) AS n FROM service_usage WHERE user_id=${userId} AND feature=${feature} AND day=${day()}`)).rows[0].n);if(used>=limit)throw new DomainError('QUOTA_EXCEEDED','今日模型额度已用完',429);}
     await tx.execute(sql`INSERT INTO model_requests (id,workspace_id,user_id,capability,input_hash,status,request_blob) VALUES (${id},${workspace},${userId},${capability},${inputHash},${requestBlob?'queued':'submitting'},${requestBlob||null})`);
-    await tx.execute(sql`INSERT INTO service_usage VALUES(${randomUUID()},${workspace},${userId},${feature},${day()})`);
+    await tx.execute(sql`INSERT INTO service_usage (id,workspace_id,user_id,feature,day,request_id) VALUES(${randomUUID()},${workspace},${userId},${feature},${day()},${id})`);
     return {created:true,status:requestBlob?'queued':'submitting',result:null};
   });}
   async function finishModelRequest(id:string,userId:string,result:Record<string,unknown>|null,status:'completed'|'processing'|'unknown'|'failed'=result?'completed':'unknown'){await repo.scoped(workspace,async tx=>{
-    await tx.execute(sql`UPDATE model_requests SET status=${status},result=${result?JSON.stringify(result):null}::jsonb,request_blob=NULL,updated_at=now() WHERE id=${id} AND user_id=${userId} AND status IN ('submitting','processing')`);
+    const changed=(await tx.execute(sql`UPDATE model_requests SET status=${status},result=${result?JSON.stringify(result):null}::jsonb,request_blob=NULL,updated_at=now() WHERE id=${id} AND user_id=${userId} AND status IN ('submitting','processing') RETURNING id`)).rows;
+    if(changed.length&&status==='failed'&&result?.safeToFailover===true&&result.code==='PROVIDER_UNAVAILABLE')await tx.execute(sql`DELETE FROM service_usage WHERE request_id=${id} AND user_id=${userId}`);
   });}
   async function takeQueuedTextRequest(){return repo.scoped(workspace,async tx=>{
     await tx.execute(sql`UPDATE model_requests SET status='failed',request_blob=NULL,result=${JSON.stringify({code:'MODEL_REQUEST_EXPIRED',message:'排队中的模型请求超过短期保留期，请创建新任务'})}::jsonb,updated_at=now() WHERE workspace_id=${workspace} AND capability='text.generate' AND status='queued' AND created_at<now()-interval '1 day'`);

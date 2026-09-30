@@ -4,8 +4,8 @@ import {generateText,generateSpeech,textGenerationSchema} from '../packages/auto
 import {defaults,type SecretSettings} from '../packages/automation/src/types';
 import type {requestBytes} from '../packages/automation/src/network';
 
-const config:SecretSettings={...defaults,baseUrl:'http://127.0.0.1:12345/v1',localModel:true,model:'fixture-model',format:'json_object',apiKey:'',minimaxKey:'',verifiedAt:null,revision:'fixture'};
-const request=()=>textGenerationSchema.parse({action:'text.generate',id:randomUUID(),messages:[{role:'system',content:'Desktop-owned task policy'},{role:'user',content:'Summarize fixture'}],jsonSchema:{type:'object',properties:{summary:{type:'string'}},required:['summary'],additionalProperties:false}});
+const config:SecretSettings={...defaults,baseUrl:'http://127.0.0.1:12345/v1',localModel:true,model:'fixture-model',format:'json_object',apiKey:'',minimaxKey:'',aggregateKey:'',verifiedAt:null,revision:'fixture'};
+const request=()=>textGenerationSchema.parse({action:'text.generate',providerId:'standard',id:randomUUID(),messages:[{role:'system',content:'Desktop-owned task policy'},{role:'user',content:'Summarize fixture'}],jsonSchema:{type:'object',properties:{summary:{type:'string'}},required:['summary'],additionalProperties:false}});
 it('passes desktop messages unchanged and returns provider text without server business prompts',async()=>{
   let sent:unknown;
   const transport:typeof requestBytes=async(_url,options)=>{sent=JSON.parse(String(options.body));expect(options).toMatchObject({idleTimeout:600_000,maxDuration:1_800_000});return {status:200,headers:{'content-type':'text/event-stream'},body:Buffer.from('data: '+JSON.stringify({model:'fixture-model',choices:[{delta:{content:'{"summary":'}}]})+'\n\ndata: '+JSON.stringify({choices:[{delta:{content:'"完成"}'},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n'),url:_url};};
@@ -38,11 +38,30 @@ it('keeps incomplete streams and truncated answers out of completed results',asy
   const truncated:typeof requestBytes=async(url)=>({status:200,headers:{'content-type':'text/event-stream'},body:Buffer.from(events+'data: '+JSON.stringify({choices:[{delta:{},finish_reason:'length'}]})+'\n\ndata: [DONE]\n\n'),url});
   await expect(generateText(config,request(),truncated)).rejects.toMatchObject({code:'MODEL_TRUNCATED'});
 });
-it('decodes bounded speech output from the configured audio model',async()=>{
+it('preserves the provider speech response byte for byte',async()=>{
   const audio=Buffer.concat([Buffer.from('ID3'),Buffer.alloc(12,1)]);
-  let authorization='';
-  const transport:typeof requestBytes=async(url,options)=>{authorization=String(options.headers?.Authorization);return {status:200,headers:{},body:Buffer.from(JSON.stringify({base_resp:{status_code:0},data:{status:2,audio:audio.toString('hex')},extra_info:{usage_characters:2,audio_length:300}})),url};};
-  const result=await generateSpeech({...config,minimaxKey:'fixture-secret',minimax:{...config.minimax,enabled:true}},'你好',transport);
-  expect(result).toMatchObject({mime:'audio/mpeg',usage:{characters:2,durationMs:300}});
-  expect(result.bytes).toEqual(audio);expect(authorization).toBe('Bearer fixture-secret');
+  let authorization='',sent:any;
+  const raw=Buffer.from(' {"base_resp":{"status_code":0},"data":{"status":2,"audio":"'+audio.toString('hex')+'"}}\n');
+  const transport:typeof requestBytes=async(url,options)=>{authorization=String(options.headers?.Authorization);sent=JSON.parse(String(options.body));return {status:200,headers:{},body:raw,url};};
+  const result=await generateSpeech({...config,independentAudioEnabled:true,minimaxKey:'fixture-secret'},'你好',config.minimax.voices[0].id,'standard',{speed:1.2,bitrate:128000},transport);
+  expect(result.mime).toBe('application/json');
+  expect(result.bytes).toEqual(raw);expect(authorization).toBe('Bearer fixture-secret');
+  expect(sent.voice_setting).toMatchObject({voice_id:config.minimax.voices[0].id,speed:1.2});
+  expect(sent.audio_setting.bitrate).toBe(128000);
+  await expect(generateSpeech({...config,independentAudioEnabled:true,minimaxKey:'fixture-secret'},'你好','forbidden','standard',{},transport)).rejects.toMatchObject({code:'AUDIO_VOICE'});
+});
+it('routes aggregate text with its own credential and only marks explicit rejection safe for fallback',async()=>{
+  const combined={...config,apiKey:'ordinary-key',aggregateKey:'minimax-key',minimax:{...config.minimax,aggregate:true,textModel:'MiniMax-M3'}};
+  let url='',authorization='',model='';
+  const unavailable:typeof requestBytes=async(next,options)=>{url=next;authorization=String(options.headers?.Authorization);model=JSON.parse(String(options.body)).model;return {status:429,headers:{},body:Buffer.alloc(0),url:next};};
+  await expect(generateText(combined,{...request(),providerId:'minimax'},unavailable)).rejects.toMatchObject({code:'PROVIDER_UNAVAILABLE',retryable:false});
+  expect(url).toBe(config.minimax.baseUrl+'/chat/completions');expect(authorization).toBe('Bearer minimax-key');expect(model).toBe('MiniMax-M3');
+  const rejected:typeof requestBytes=async(next)=>({status:401,headers:{},body:Buffer.alloc(0),url:next});
+  await expect(generateText(combined,{...request(),providerId:'minimax'},rejected)).rejects.toMatchObject({code:'PROVIDER_UNAVAILABLE',retryable:false});
+  const ambiguous:typeof requestBytes=async(next)=>({status:502,headers:{},body:Buffer.alloc(0),url:next});
+  await expect(generateText(combined,{...request(),providerId:'minimax'},ambiguous)).rejects.toMatchObject({code:'MODEL_HTTP',retryable:true});
+  const serviceUnavailable:typeof requestBytes=async(next)=>({status:503,headers:{},body:Buffer.alloc(0),url:next});
+  await expect(generateText(combined,{...request(),providerId:'minimax'},serviceUnavailable)).rejects.toMatchObject({code:'MODEL_HTTP',retryable:true});
+  const uncertain:typeof requestBytes=async(next)=>{throw new Error('connection lost after submit')};
+  await expect(generateText(combined,{...request(),providerId:'minimax'},uncertain)).rejects.toThrow('connection lost');
 });

@@ -58,7 +58,7 @@ h3{font-size:15px;line-height:1.5}
 .actions{justify-content:flex-start}
 .status{color:var(--muted);font-size:11px}
 .status:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:7px}
-#overview,#membership,#users,#orders,#auth-services,#services,#creative,#channels{scroll-margin-top:90px}
+#overview,#membership,#users,#orders,#auth-services,#services,#minimax,#creative,#channels{scroll-margin-top:90px}
 .overview-dashboard{margin-bottom:38px}
 .overview-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:17px}
 .overview-heading .portal-label{margin-bottom:5px}
@@ -91,6 +91,14 @@ h3{font-size:15px;line-height:1.5}
 .overview-orders table{min-width:590px}
 .overview-updated{margin-top:11px;color:var(--muted);font-size:11px;text-align:right}
 .billing-admin,.admin-panel>form,.admin-panel>section{margin:0 0 20px;padding:27px 30px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 3px 18px #172e1b05}
+.minimax-capabilities>.muted{margin-top:8px;line-height:1.7}
+.minimax-capability-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:19px}
+.minimax-capability-card{min-width:0;padding:17px 18px;border:1px solid var(--line);border-radius:10px;background:var(--subtle)}
+.minimax-capability-card h3{font-size:13px;line-height:1.5}
+.minimax-capability-card ul{margin:11px 0 0;padding-left:17px;color:var(--muted);font-size:11px;line-height:1.75}
+.minimax-capability-card li+li{margin-top:7px}
+.minimax-capability-card.unavailable{border-color:#e9c8b7;background:#fff7f1}
+body.dark .minimax-capability-card.unavailable{border-color:#6e4d43;background:#352a28}
 .billing-admin>p{margin-top:5px;max-width:780px;color:var(--muted);font-size:12px;line-height:1.7}
 .billing-admin details{margin:18px 0 0;padding-top:18px;border-top:1px solid var(--line)}
 .billing-admin summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:9px;font-size:13px;font-weight:650;color:var(--text)}
@@ -137,6 +145,8 @@ h3{font-size:15px;line-height:1.5}
 .model-preset-help{flex:1;min-width:min(100%,230px);padding-bottom:7px;color:var(--muted);font-size:11px;line-height:1.6}
 .admin-panel .connector-block{padding:17px 0;border-top:1px solid var(--line)}
 .admin-panel .connector-block:first-of-type{margin-top:18px}
+.routing-list{display:grid;gap:8px;margin-top:12px}.routing-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--subtle)}.routing-row .actions{gap:6px}.routing-row .btn{padding:7px 10px;min-height:34px}.routing-row .btn:disabled{opacity:.45;cursor:not-allowed}
+.routing-ready,.routing-missing{margin-left:9px;font-size:11px;font-weight:500}.routing-ready{color:#24784d}.routing-missing{color:var(--muted)}
 .settings-row{display:flex;justify-content:space-between;gap:20px;padding:13px 0;border-bottom:1px solid var(--line);font-size:12px}
 .table-wrap{overflow:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -170,3 +180,4 @@ body.dark .account-error{background:#412725;color:#ffaea5!important}
 #orders table{min-width:850px}#users table{min-width:900px}#orders td:first-child strong{font-size:11px;overflow-wrap:anywhere}
 .overview-services{margin-bottom:15px}.overview-service-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px}.overview-service-grid>div{display:grid;align-content:start;gap:5px;min-width:0;padding:14px;border-radius:8px;background:var(--subtle)}.overview-service-grid span{color:var(--muted);font-size:11px}.overview-service-grid strong{font-size:12px;font-weight:650;line-height:1.5}.overview-service-grid a{color:var(--primary);font-size:11px;text-decoration:none}.overview-service-grid a:hover{text-decoration:underline}
 @media(max-width:950px){.overview-service-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.overview-service-grid{grid-template-columns:1fr}}
+@media(max-width:1100px){.minimax-capability-grid{grid-template-columns:1fr}}

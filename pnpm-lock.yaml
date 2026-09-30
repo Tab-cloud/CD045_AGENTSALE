@@ -73,9 +73,6 @@ importers:
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
-      sharp:
-        specifier: 0.35.4
-        version: 0.35.4(@types/node@24.19.0)
       zod:
         specifier: 4.5.4
         version: 4.5.4
@@ -1600,7 +1597,8 @@ snapshots:
       '@fidm/asn1': 1.0.4
       tweetnacl: 1.0.3
 
-  '@img/colour@1.1.0': {}
+  '@img/colour@1.1.0':
+    optional: true
 
   '@img/sharp-darwin-arm64@0.35.4':
     optionalDependencies:
@@ -2294,7 +2292,8 @@ snapshots:
 
   scheduler@0.27.0: {}
 
-  semver@7.8.5: {}
+  semver@7.8.5:
+    optional: true
 
   set-blocking@2.0.0: {}
 
@@ -2330,6 +2329,7 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.4
       '@img/sharp-win32-x64': 0.35.4
       '@types/node': 24.19.0
+    optional: true
 
   side-channel-list@1.0.1:
     dependencies:

@@ -69,6 +69,18 @@ it('reserves model quota exactly once for a request ID and rejects conflicting c
  await expect(p.members.claimModelRequest(randomUUID(),account.user.id,'hash-c')).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});
  expect((await p.members.status(account.user.id)).usage).toContainEqual({feature:'model',used:1});
 });
+it('does not consume the only daily allowance when an upstream explicitly rejects an attempt',async()=>{
+ const {platform}=await import('../console/lib/platform');const p=await platform(),admin=await p.auth.require(adminToken,true);
+ const login=await auth.POST(req('auth',undefined,{action:'register',username:'fallbackfixture',password:'fixture-password-long',desktop:true})),account=await login.json();
+ await p.members.savePlan({id:'fallback-quota-test',name:'故障切换额度',priceCents:1,days:1,published:true,limits:{model:1,image:0,video:0}},admin);
+ const order=await p.members.createOrder(account.user,'fallback-quota-test','wechat');await p.members.settle(order.id,'wechat',1,'synthetic-fallback-quota');
+ const first=randomUUID(),second=randomUUID();
+ expect((await p.members.claimModelRequest(first,account.user.id,'first')).created).toBe(true);
+ await p.members.finishModelRequest(first,account.user.id,{code:'PROVIDER_UNAVAILABLE',safeToFailover:true,message:'明确未受理'},'failed');
+ expect((await p.members.status(account.user.id)).usage.find((item:any)=>item.feature==='model')).toBeUndefined();
+ expect((await p.members.claimModelRequest(second,account.user.id,'second')).created).toBe(true);
+ expect((await p.members.status(account.user.id)).usage).toContainEqual({feature:'model',used:1});
+});
 it('relays each supplier text chunk before completion and keeps the final result by request ID',async()=>{
  const {platform}=await import('../console/lib/platform');const {modelVault}=await import('../console/lib/local-runtime');
  const p=await platform(),admin=await p.auth.require(adminToken,true);
@@ -88,8 +100,9 @@ it('relays each supplier text chunk before completion and keeps the final result
  try{
   const address=upstream.address();if(!address||typeof address==='string')throw new Error('fixture server address');
   const vault=await modelVault(),before=await vault.get();
-  await vault.save({baseUrl:`http://127.0.0.1:${address.port}/v1`,model:'fixture',localModel:true,format:'json_schema',protocol:'openai',minimax:before.minimax},'',undefined,before.revision);
-  const id=randomUUID(),input={action:'text.generate',id,messages:[{role:'user',content:'请返回结果'}]};
+  const {apiKey:_,minimaxKey:__,aggregateKey:___,verifiedAt:____,revision:_____,...settings}=before;
+  await vault.save({...settings,baseUrl:`http://127.0.0.1:${address.port}/v1`,model:'fixture',localModel:true,format:'json_schema',protocol:'openai'},'',undefined,undefined,before.revision);
+  const id=randomUUID(),input={action:'text.generate',providerId:'standard',id,messages:[{role:'user',content:'请返回结果'}]};
   const submitted=await models.POST(req('models',account.token,input));
   expect(submitted.status).toBe(200);expect(await submitted.json()).toMatchObject({id,status:'processing'});
   const result=await models.GET(req('models?request='+id,account.token));
@@ -126,10 +139,10 @@ it('delivers a completed model file only to its owner',async()=>{
  await p.members.savePlan({id:'model-file-test',name:'模型文件测试',priceCents:1,days:1,published:true,limits:{model:0,image:1,video:0}},admin);
  const order=await p.members.createOrder(account.user,'model-file-test','wechat');await p.members.settle(order.id,'wechat',1,'synthetic-model-file-transaction');
  const id=randomUUID();await p.members.claimModelRequest(id,account.user.id,'image-hash','image.generate');
- const bytes=Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]);
- await storeModelFile(account.user.id,id,'image/png',bytes);
- await p.members.finishModelRequest(id,account.user.id,{id,status:'completed',mime:'image/png',model:'fixture'});
- const response=await models.GET(req('models?asset='+id,account.token));expect(response.status).toBe(200);expect(response.headers.get('content-type')).toBe('image/png');expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+ const bytes=Buffer.from(' {"data":[{"b64_json":"fixture"}]}\n');
+ await storeModelFile(account.user.id,id,'application/json',bytes);
+ await p.members.finishModelRequest(id,account.user.id,{id,status:'completed',mime:'application/json',model:'fixture'});
+ const response=await models.GET(req('models?asset='+id,account.token));expect(response.status).toBe(200);expect(response.headers.get('content-type')).toBe('application/json');expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
  expect((await models.GET(req('models?asset='+id,memberToken))).status).toBe(404);
  const first=concurrencyGate.tryAcquire('asset','other-a'),second=concurrencyGate.tryAcquire('asset','other-b');
  expect(first&&second).toBeTruthy();

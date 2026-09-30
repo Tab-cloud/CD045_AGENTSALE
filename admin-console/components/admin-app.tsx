@@ -1,6 +1,8 @@
 'use client';
 import {useEffect,useState} from 'react';
 import {AdminPanel} from './admin-panel';
+import {MiniMaxPanel} from './minimax-panel';
+import {RoutingSettings} from './routing-settings';
 import {BillingSettings} from './billing-settings';
 import {CreativeSettings} from './creative-settings';
 import {OverviewDashboard} from './overview-dashboard';
@@ -15,8 +17,10 @@ const sections = [
   {id:'users',label:'用户管理',number:'02',title:'用户管理',description:'查看注册用户、账号绑定和会员权限。'},
   {id:'orders',label:'订阅账单',number:'03',title:'订阅账单',description:'查询会员订单、收款状态和交易记录。'},
   {id:'auth-services',label:'登录与短信',number:'04',title:'登录与短信',description:'配置手机号验证码与微信登录服务。'},
-  {id:'services',label:'文本与音频模型',number:'05',title:'文本与音频模型',description:'配置模型供应商、密钥和能力参数。'},
-  {id:'creative',label:'图片与视频模型',number:'06',title:'图片与视频模型',description:'配置生图、生视频模型；创作流程由桌面端执行。'},
+  {id:'services',label:'文本与音频模型',number:'05',title:'文本与音频模型',description:'配置普通文本与音频模型供应商及密钥。'},
+  {id:'minimax',label:'MiniMax 聚合',number:'06',title:'MiniMax 聚合',description:'管理单密钥模型连接、音色列表和 Token Plan 能力边界。'},
+  {id:'creative',label:'图片与视频模型',number:'07',title:'图片与视频模型',description:'配置普通图片与视频模型接口；创作流程由桌面端执行。'},
+  {id:'routing',label:'服务路由',number:'08',title:'服务路由',description:'分别设置文本、图片、语音和视频模型的优先顺序。'},
 ] as const;
 type SectionId = typeof sections[number]['id'];
 function currentSection():SectionId{
@@ -57,7 +61,9 @@ export function AdminApp({operatorUrl}:{operatorUrl:string}){
         {activeSection==='orders'&&<OrderLedger/>}
         {activeSection==='auth-services'&&<AuthServicesEditor/>}
         {activeSection==='services'&&<AdminPanel/>}
+        {activeSection==='minimax'&&<MiniMaxPanel/>}
         {activeSection==='creative'&&<CreativeSettings/>}
+        {activeSection==='routing'&&<RoutingSettings/>}
         <footer>聆风 AI 管理控制台 <span>配置修改保留审计记录</span></footer>
       </main>
     </div>

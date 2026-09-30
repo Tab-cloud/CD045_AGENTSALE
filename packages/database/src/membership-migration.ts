@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS membership_plans (id text NOT NULL, workspace_id text
 CREATE TABLE IF NOT EXISTS memberships (user_id uuid PRIMARY KEY REFERENCES app_users(id), workspace_id text NOT NULL, document jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS membership_orders (id text PRIMARY KEY, workspace_id text NOT NULL, user_id uuid NOT NULL REFERENCES app_users(id), status text NOT NULL, document jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS service_usage (id uuid PRIMARY KEY, workspace_id text NOT NULL, user_id uuid NOT NULL REFERENCES app_users(id), feature text NOT NULL, day text NOT NULL);
+ALTER TABLE service_usage ADD COLUMN IF NOT EXISTS request_id uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS service_usage_request ON service_usage(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS service_usage_daily ON service_usage(workspace_id,user_id,day,feature);
 ${['membership_plans','memberships','membership_orders','service_usage'].map(table=>`
 GRANT SELECT,INSERT,UPDATE,DELETE ON ${table} TO agentsale_local;

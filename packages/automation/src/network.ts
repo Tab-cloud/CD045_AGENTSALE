@@ -2,6 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { Transform } from 'node:stream';
 import { FlowError } from './types';
 
 export function isPublicAddress(ip:string):boolean {
@@ -40,7 +41,7 @@ async function publiclyResolvable(hostname:string){
   publicDnsCache.set(hostname,{allowed,expires:Date.now()+300_000});return allowed;
 }
 
-export async function requestBytes(raw:string,options:{method?:string;headers?:Record<string,string>;body?:string|Buffer;local?:boolean;trustedMiniMax?:boolean;trustedDnsResolver?:boolean;timeout?:number;idleTimeout?:number;maxDuration?:number;maxBytes?:number;redirects?:number;followRedirects?:boolean;collectBody?:boolean;onChunk?:(chunk:Buffer,status:number,headers:http.IncomingHttpHeaders)=>void}={}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer;url:string}>{
+async function checkedAddress(raw:string,options:{local?:boolean;trustedMiniMax?:boolean;trustedDnsResolver?:boolean}){
   const url=validUrl(raw,options.local),hostname=url.hostname.replace(/^\[|\]$/g,'');
   let timer:ReturnType<typeof setTimeout>|undefined;
   const records=await Promise.race([lookup(hostname,{all:true}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new FlowError('DNS_TIMEOUT','域名解析超时',true)),5000);})]).finally(()=>clearTimeout(timer));
@@ -49,7 +50,11 @@ export async function requestBytes(raw:string,options:{method?:string;headers?:R
     const mappedHttps=!isIP(hostname)&&url.protocol==='https:'&&(!url.port||url.port==='443')&&records.every(record=>tunMapped(record.address));
     if(!mappedHttps||!await publiclyResolvable(hostname))throw new FlowError('URL_REJECTED','域名解析到非公网地址');
   }
-  const selected=records[0];
+  return {url,selected:records[0]};
+}
+
+export async function requestBytes(raw:string,options:{method?:string;headers?:Record<string,string>;body?:string|Buffer;local?:boolean;trustedMiniMax?:boolean;trustedDnsResolver?:boolean;timeout?:number;idleTimeout?:number;maxDuration?:number;maxBytes?:number;redirects?:number;followRedirects?:boolean;collectBody?:boolean;onChunk?:(chunk:Buffer,status:number,headers:http.IncomingHttpHeaders)=>void}={}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer;url:string}>{
+  const {url,selected}=await checkedAddress(raw,options);
   return new Promise((resolve,reject)=>{
     let idleDeadline:ReturnType<typeof setTimeout>|undefined;
     const resetIdleDeadline=()=>{
@@ -80,5 +85,36 @@ export async function requestBytes(raw:string,options:{method?:string;headers?:R
     req.on('close',()=>{if(deadline)clearTimeout(deadline);if(idleDeadline)clearTimeout(idleDeadline);});
     req.on('error',e=>reject(e instanceof FlowError?e:new FlowError('NETWORK_ERROR','网络连接失败，请检查服务或稍后重试',true)));
     if(options.body)req.write(options.body);req.end();
+  });
+}
+
+export async function requestStream(raw:string,options:{maxBytes:number;trustedMiniMax?:boolean;redirects?:number;local?:boolean}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Transform}>{
+  const {url,selected}=await checkedAddress(raw,options);
+  if(url.protocol!=='https:'&&!options.local)throw new FlowError('URL_REJECTED','模型文件必须使用 HTTPS');
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    const req=(url.protocol==='https:'?https:http).request(url,{agent:false,headers:{'User-Agent':'LingfengModelGateway/1.0','Accept-Encoding':'identity'},lookup:((_host:unknown,opts:unknown,cb:Function)=>{if((opts as {all?:boolean}).all)cb(null,[selected]);else cb(null,selected.address,selected.family);}) as never},res=>{
+      if(res.statusCode&&res.statusCode>=300&&res.statusCode<400&&res.headers.location){
+        res.resume();
+        if((options.redirects||0)>=3){reject(new FlowError('REDIRECT_LIMIT','模型文件重定向过多'));return;}
+        void requestStream(new URL(res.headers.location,url).href,{...options,redirects:(options.redirects||0)+1}).then(resolve,reject);
+        return;
+      }
+      const declared=Number(res.headers['content-length']);
+      if(Number.isFinite(declared)&&declared>options.maxBytes){res.destroy();reject(new FlowError('RESPONSE_TOO_LARGE','模型文件超过允许大小'));return;}
+      let size=0;
+      const body=new Transform({transform(chunk:Buffer,_encoding,done){size+=chunk.length;done(size>options.maxBytes?new FlowError('RESPONSE_TOO_LARGE','模型文件超过允许大小'):null,chunk);}});
+      res.on('error',error=>body.destroy(error));
+      res.on('aborted',()=>body.destroy(new FlowError('NETWORK_ERROR','模型文件传输中断',true)));
+      body.on('close',()=>res.destroy());
+      res.pipe(body);
+      settled=true;
+      resolve({status:res.statusCode||0,headers:res.headers,body});
+    });
+    req.setTimeout(600_000,()=>req.destroy(new FlowError('NETWORK_IDLE_TIMEOUT','模型文件传输长时间没有新数据',true)));
+    const deadline=setTimeout(()=>req.destroy(new FlowError('NETWORK_TIMEOUT','模型文件传输超时',true)),1_800_000);
+    req.on('close',()=>clearTimeout(deadline));
+    req.on('error',error=>{if(!settled)reject(error instanceof FlowError?error:new FlowError('NETWORK_ERROR','模型文件连接失败',true));});
+    req.end();
   });
 }

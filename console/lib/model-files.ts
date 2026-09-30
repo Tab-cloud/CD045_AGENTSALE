@@ -1,11 +1,11 @@
 import {createReadStream} from 'node:fs';
-import {mkdir,readdir,rename,stat,unlink,writeFile} from 'node:fs/promises';
+import {mkdir,readdir,readFile,rename,stat,unlink,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {modelRoot} from './local-runtime';
 
-const mimeExtension={'image/png':'png','video/mp4':'mp4','audio/mpeg':'mp3'} as const;
+const mimeExtension={'application/json':'json'} as const;
 type Mime=keyof typeof mimeExtension;
 async function folder(owner:string){return path.join(modelRoot(),'model-results',z.string().uuid().parse(owner));}
 async function name(owner:string,id:string,mime:Mime){return path.join(await folder(owner),z.string().uuid().parse(id)+'.'+mimeExtension[mime]);}
@@ -19,7 +19,7 @@ export async function storeModelFile(owner:string,id:string,mime:Mime,bytes:Buff
   // Results are a transfer cache. Preserve request metadata to prevent replay after expiry.
   const expiry=Date.now()-7*86400_000;
   for(const file of await readdir(directory)){
-    if(!/^[\da-f-]{36}\.(png|mp4|mp3)$/.test(file))continue;
+    if(!/^[\da-f-]{36}\.(json|png|mp4|mp3)$/.test(file))continue;
     const candidate=path.join(directory,file);
     if((await stat(candidate)).mtimeMs<expiry)await unlink(candidate).catch(()=>{});
   }
@@ -29,3 +29,4 @@ export async function streamModelFile(owner:string,id:string,mime:Mime){
   await stat(filename);
   return createReadStream(filename);
 }
+export async function readModelFile(owner:string,id:string){return readFile(await name(owner,id,'application/json'));}
