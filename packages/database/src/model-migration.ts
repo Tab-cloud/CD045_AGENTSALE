@@ -7,9 +7,11 @@ CREATE TABLE IF NOT EXISTS model_requests (
   input_hash text NOT NULL,
   status text NOT NULL,
   result jsonb,
+  request_blob text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE model_requests ADD COLUMN IF NOT EXISTS request_blob text;
 CREATE INDEX IF NOT EXISTS model_requests_user ON model_requests(workspace_id,user_id,created_at);
 -- Search and local knowledge are desktop capabilities. Existing paid plan snapshots
 -- retain their price and model/media grants while their obsolete search quota is removed.

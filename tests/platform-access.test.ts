@@ -3,6 +3,8 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {randomUUID,generateKeyPairSync} from 'node:crypto';
+import {createServer} from 'node:http';
+import {once} from 'node:events';
 import * as auth from '../console/app/api/v1/auth/route';
 import * as config from '../console/app/api/v1/admin/route';
 import * as creativeConfig from '../console/app/api/v1/model-media-config/route';
@@ -67,6 +69,34 @@ it('reserves model quota exactly once for a request ID and rejects conflicting c
  await expect(p.members.claimModelRequest(randomUUID(),account.user.id,'hash-c')).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});
  expect((await p.members.status(account.user.id)).usage).toContainEqual({feature:'model',used:1});
 });
+it('keeps a text result available by its request ID after the submit response has ended',async()=>{
+ const {platform}=await import('../console/lib/platform');const {modelVault}=await import('../console/lib/local-runtime');
+ const p=await platform(),admin=await p.auth.require(adminToken,true);
+ const login=await auth.POST(req('auth',undefined,{action:'register',username:'asyncmodel',password:'fixture-password-long',desktop:true})),account=await login.json();
+ await p.members.savePlan({id:'async-model-test',name:'异步模型测试',priceCents:1,days:1,published:true,limits:{model:1,image:0,video:0}},admin);
+ const order=await p.members.createOrder(account.user,'async-model-test','wechat');await p.members.settle(order.id,'wechat',1,'synthetic-async-model');
+ let calls=0;
+ const upstream=createServer(async(_request,response)=>{calls++;await new Promise(resolve=>setTimeout(resolve,150));response.setHeader('Content-Type','application/json');response.end(JSON.stringify({choices:[{message:{content:'可取回的测试结果'},finish_reason:'stop'}],model:'fixture'}));});
+ upstream.listen(0,'127.0.0.1');await once(upstream,'listening');
+ try{
+  const address=upstream.address();if(!address||typeof address==='string')throw new Error('fixture server address');
+  const vault=await modelVault(),before=await vault.get();
+  await vault.save({baseUrl:`http://127.0.0.1:${address.port}/v1`,model:'fixture',localModel:true,format:'json_schema',protocol:'openai',minimax:before.minimax},'',undefined,before.revision);
+  const id=randomUUID(),input={action:'text.generate',id,messages:[{role:'user',content:'请返回结果'}]};
+  const submitted=await models.POST(req('models',account.token,input));
+  expect(submitted.status).toBe(200);expect(await submitted.json()).toMatchObject({id,status:'processing'});
+  let result:Response|undefined;
+  for(let attempt=0;attempt<40;attempt++){
+   result=await models.GET(req('models?request='+id,account.token));
+   if((await result.clone().json()).text)break;
+   await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  expect(result?.status).toBe(200);expect(await result?.json()).toMatchObject({text:'可取回的测试结果'});
+  expect((await models.POST(req('models',account.token,input))).status).toBe(200);
+  expect(calls).toBe(1);
+  expect((await p.members.status(account.user.id)).usage).toContainEqual({feature:'model',used:1});
+ }finally{upstream.close();}
+},15000);
 it('delivers a completed model file only to its owner',async()=>{
  const {platform}=await import('../console/lib/platform');const {storeModelFile}=await import('../console/lib/model-files');const {concurrencyGate}=await import('../console/lib/concurrency');
  const p=await platform(),admin=await p.auth.require(adminToken,true);

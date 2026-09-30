@@ -102,6 +102,18 @@ describe('subscription authority',()=>{
   expect((await members.closeOrder(order.id,user.id)).status).toBe('paid');
  });
  it('enforces concurrent daily limits and charges one model request per id',async()=>{const {members,user,auth}=await setup();const o=await members.createOrder(user,'test','wechat');await members.settle(o.id,'wechat',100,'tx');const results=await Promise.allSettled(Array.from({length:4},()=>claim(members,user.id,'text.generate')));expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(2);const id=randomUUID();await Promise.all([claim(members,user.id,'image.generate',id),claim(members,user.id,'image.generate',id)]);await expect(claim(members,user.id,'image.generate')).rejects.toThrow('额度');await expect(claim(members,user.id,'video.generate')).rejects.toThrow('会员');const other=await auth.register('another','test-long-password');await expect(members.modelRequest(id,other.id)).rejects.toThrow('不存在');await expect(members.order(o.id,other.id)).rejects.toThrow('不存在');});
+ it('keeps interrupted submitted text requests uncertain without replaying their encrypted payload',async()=>{
+  const {workspace,members,user}=await setup();const order=await members.createOrder(user,'test','wechat');
+  await members.settle(order.id,'wechat',100,'interrupted-model-test');
+  const id=randomUUID();
+  expect(await members.claimModelRequest(id,user.id,'same-input','text.generate','sealed-fixture')).toMatchObject({created:true});
+  expect(await members.takeQueuedTextRequest()).toMatchObject({id,userId:user.id,requestBlob:'sealed-fixture'});
+  await repo.scoped(workspace,tx=>tx.execute(sql`UPDATE model_requests SET updated_at=now()-interval '4 minutes' WHERE id=${id}`));
+  await members.markInterruptedTextRequestsUnknown();
+  expect(await members.modelRequest(id,user.id)).toMatchObject({status:'unknown',result:{code:'MODEL_REQUEST_UNCERTAIN'}});
+  expect(await members.takeQueuedTextRequest()).toBeNull();
+  expect(await members.claimModelRequest(id,user.id,'same-input','text.generate','sealed-fixture')).toMatchObject({created:false,status:'unknown'});
+ });
  it('treats -1 as unlimited across model and media while 0 still disables a feature',async()=>{
   const {members,user,admin,plan}=await setup();
   const unlimited={...plan,limits:{model:-1,image:-1,video:-1}};

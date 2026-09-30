@@ -54,5 +54,5 @@ export function createVault(directory:string){
     await persist(next);return safeSettings(next);
   });}
   async function verified(revision:string){return exclusive(async()=>{const current=await get();if(current.revision!==revision)throw new FlowError('CONFIG_CHANGED','模型配置已变化，请重新验证');await persist({...current,verifiedAt:new Date().toISOString()});});}
-  return {get,save,verified};
+  return {get,save,verified,sealText:(value:string)=>crypt(value),unsealText:(value:string)=>crypt(value,true)};
 }

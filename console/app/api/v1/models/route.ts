@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {Readable} from 'node:stream';
 import {z} from 'zod';
-import {textGenerationSchema,imageGenerationSchema,videoGenerationSchema,videoPollSchema,audioSpeechSchema,generateText,generateSpeech} from '../../../../../packages/automation/src/model-gateway';
+import {textGenerationSchema,imageGenerationSchema,videoGenerationSchema,videoPollSchema,audioSpeechSchema,generateSpeech} from '../../../../../packages/automation/src/model-gateway';
 import {assertProvider} from '../../../../../packages/automation/src/providers';
 import {FlowError} from '../../../../../packages/automation/src/types';
 import {modelMediaService} from '../../../../lib/model-media-service';
@@ -9,6 +9,7 @@ import {failure,modelVault} from '../../../../lib/local-runtime';
 import {streamModelFile,storeModelFile} from '../../../../lib/model-files';
 import {busyResponse,concurrencyGate,type Lane} from '../../../../lib/concurrency';
 import {session,platform} from '../../../../lib/platform';
+import {startModelWorker} from '../../../../lib/model-job-queue';
 import {jsonBody} from '../../../../lib/server-access';
 
 export const runtime='nodejs';
@@ -17,6 +18,15 @@ export const dynamic='force-dynamic';
 export async function GET(request:Request){
   try{
     const user=await session(request),p=await platform();
+    const requestId=new URL(request.url).searchParams.get('request');
+    if(requestId){
+      const id=z.string().uuid().parse(requestId),entry=await p.members.modelRequest(id,user.id);
+      if(entry.capability!=='text.generate')return Response.json({code:'MODEL_REQUEST_CONFLICT',message:'模型请求能力不匹配'},{status:409});
+      if(entry.status==='completed')return entry.result?Response.json(entry.result,{headers:{'Cache-Control':'no-store'}}):Response.json({code:'MODEL_RESULT_EXPIRED',message:'历史模型响应已过保留期'},{status:410});
+      if(entry.status==='failed')return Response.json(entry.result||{code:'MODEL_REQUEST_FAILED',message:'模型请求失败'},{status:422});
+      if(entry.status==='unknown')return Response.json(entry.result||{code:'MODEL_REQUEST_UNCERTAIN',message:'模型提交结果未知，不会重复提交'},{status:409});
+      return Response.json({id,status:'processing'},{headers:{'Cache-Control':'no-store'}});
+    }
     const asset=new URL(request.url).searchParams.get('asset');
     if(asset){
       const entry=await p.members.modelRequest(z.string().uuid().parse(asset),user.id);
@@ -78,17 +88,19 @@ export async function POST(request:Request){
     if(!release)return busyResponse();
     try{
     const hash=createHash('sha256').update(JSON.stringify(body)).digest('hex');
-    const claim=await p.members.claimModelRequest(body.id,user.id,hash,body.action);
+    const blob=body.action==='text.generate'?await (await modelVault()).sealText(JSON.stringify(body)):undefined;
+    const claim=await p.members.claimModelRequest(body.id,user.id,hash,body.action,blob);
     if(!claim.created){
       if(claim.status==='completed'&&claim.result)return Response.json(claim.result,{headers:{'Cache-Control':'no-store'}});
+      if(claim.status==='failed')return Response.json(claim.result||{code:'MODEL_REQUEST_FAILED',message:'模型请求失败'},{status:422});
+      if(body.action==='text.generate'&&['queued','submitting','processing'].includes(claim.status))return Response.json({id:body.id,status:'processing'},{headers:{'Cache-Control':'no-store'}});
       if(claim.status==='processing'&&body.action==='video.generate')return Response.json({id:body.id,status:'processing',message:'视频模型正在生成',taskId:'model-gateway-v1'},{headers:{'Cache-Control':'no-store'}});
       return Response.json({code:claim.status==='completed'?'MODEL_RESULT_EXPIRED':'MODEL_REQUEST_UNCERTAIN',message:claim.status==='completed'?'历史模型响应已过保留期，请创建新任务':'原模型请求仍在处理或结果未知，不会重复计费提交'},{status:409});
     }
     try{
       if(body.action==='text.generate'){
-        const result=await generateText(config,body);
-        await p.members.finishModelRequest(body.id,user.id,result);
-        return Response.json(result,{headers:{'Cache-Control':'no-store'}});
+        startModelWorker();
+        return Response.json({id:body.id,status:'processing'},{headers:{'Cache-Control':'no-store'}});
       }
       if(body.action==='video.generate'){
         const result=await (await modelMediaService()).modelVideoSubmit(body.prompt);

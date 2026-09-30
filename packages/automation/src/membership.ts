@@ -25,7 +25,7 @@ export function createMembership(repo:Repository,workspace:string){
   const read=async(userId:string)=>repo.scoped(workspace,async tx=>(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${userId}`)).rows[0]?.document as Membership|undefined);
   async function status(userId:string){const membership=await read(userId);const active=!!membership&&membership.status==='active'&&Date.parse(membership.expiresAt)>Date.now();const usage=await repo.scoped(workspace,async tx=>(await tx.execute(sql`SELECT feature,count(*)::int AS used FROM service_usage WHERE user_id=${userId} AND day=${day()} GROUP BY feature`)).rows);return {active,membership:membership||null,features:featureSchema.options.filter(f=>active&&includesFeature(membership!.plan.limits[f])),usage};}
   async function requireFeature(userId:string,feature:Feature){const value=await status(userId);if(!value.features.includes(feature))throw new DomainError('SUBSCRIPTION_REQUIRED','请订阅包含此服务的会员套餐，或续费已到期的会员',403);return value;}
-  async function claimModelRequest(id:string,userId:string,inputHash:string,capability:'text.generate'|'image.generate'|'image.edit'|'video.generate'|'audio.speech'='text.generate'){return repo.scoped(workspace,async tx=>{
+  async function claimModelRequest(id:string,userId:string,inputHash:string,capability:'text.generate'|'image.generate'|'image.edit'|'video.generate'|'audio.speech'='text.generate',requestBlob?:string){return repo.scoped(workspace,async tx=>{
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
     await tx.execute(sql`UPDATE model_requests SET result=NULL WHERE result IS NOT NULL AND updated_at<now()-interval '7 days'`);
     const existing=(await tx.execute(sql`SELECT user_id,input_hash,capability,status,result FROM model_requests WHERE id=${id}`)).rows[0];
@@ -38,12 +38,22 @@ export function createMembership(repo:Repository,workspace:string){
     const limit=m?.plan.limits[feature];
     if(!m||m.status!=='active'||Date.parse(m.expiresAt)<=Date.now()||!includesFeature(limit))throw new DomainError('SUBSCRIPTION_REQUIRED','会员未开通模型服务或已到期',403);
     if(limit!==-1){const used=Number((await tx.execute(sql`SELECT count(*) AS n FROM service_usage WHERE user_id=${userId} AND feature=${feature} AND day=${day()}`)).rows[0].n);if(used>=limit)throw new DomainError('QUOTA_EXCEEDED','今日模型额度已用完',429);}
-    await tx.execute(sql`INSERT INTO model_requests (id,workspace_id,user_id,capability,input_hash,status) VALUES (${id},${workspace},${userId},${capability},${inputHash},'submitting')`);
+    await tx.execute(sql`INSERT INTO model_requests (id,workspace_id,user_id,capability,input_hash,status,request_blob) VALUES (${id},${workspace},${userId},${capability},${inputHash},${requestBlob?'queued':'submitting'},${requestBlob||null})`);
     await tx.execute(sql`INSERT INTO service_usage VALUES(${randomUUID()},${workspace},${userId},${feature},${day()})`);
-    return {created:true,status:'submitting',result:null};
+    return {created:true,status:requestBlob?'queued':'submitting',result:null};
   });}
   async function finishModelRequest(id:string,userId:string,result:Record<string,unknown>|null,status:'completed'|'processing'|'unknown'|'failed'=result?'completed':'unknown'){await repo.scoped(workspace,async tx=>{
-    await tx.execute(sql`UPDATE model_requests SET status=${status},result=${result?JSON.stringify(result):null}::jsonb,updated_at=now() WHERE id=${id} AND user_id=${userId} AND status IN ('submitting','processing')`);
+    await tx.execute(sql`UPDATE model_requests SET status=${status},result=${result?JSON.stringify(result):null}::jsonb,request_blob=NULL,updated_at=now() WHERE id=${id} AND user_id=${userId} AND status IN ('submitting','processing')`);
+  });}
+  async function takeQueuedTextRequest(){return repo.scoped(workspace,async tx=>{
+    await tx.execute(sql`UPDATE model_requests SET status='failed',request_blob=NULL,result=${JSON.stringify({code:'MODEL_REQUEST_EXPIRED',message:'排队中的模型请求超过短期保留期，请创建新任务'})}::jsonb,updated_at=now() WHERE workspace_id=${workspace} AND capability='text.generate' AND status='queued' AND created_at<now()-interval '1 day'`);
+    const candidate=(await tx.execute(sql`SELECT id,user_id,request_blob FROM model_requests WHERE workspace_id=${workspace} AND capability='text.generate' AND status='queued' ORDER BY created_at LIMIT 1`)).rows[0];
+    if(!candidate)return null;
+    const claimed=(await tx.execute(sql`UPDATE model_requests SET status='submitting',updated_at=now() WHERE id=${String(candidate.id)} AND status='queued' RETURNING id`)).rows;
+    return claimed.length?{id:String(candidate.id),userId:String(candidate.user_id),requestBlob:String(candidate.request_blob)}:null;
+  });}
+  async function markInterruptedTextRequestsUnknown(){return repo.scoped(workspace,async tx=>{
+    await tx.execute(sql`UPDATE model_requests SET status='unknown',request_blob=NULL,result=${JSON.stringify({code:'MODEL_REQUEST_UNCERTAIN',message:'模型请求中断，结果无法确认；不会重复提交'})}::jsonb,updated_at=now() WHERE workspace_id=${workspace} AND capability='text.generate' AND status='submitting' AND updated_at<now()-interval '3 minutes'`);
   });}
   async function modelRequest(id:string,userId:string){return repo.scoped(workspace,async tx=>{
     const row=(await tx.execute(sql`SELECT capability,status,result FROM model_requests WHERE id=${id} AND user_id=${userId}`)).rows[0];
@@ -146,5 +156,5 @@ export function createMembership(repo:Repository,workspace:string){
   }
   // Only called after payment-provider signature and merchant validation. Atomic and replay-safe.
   async function settle(id:string,channel:Order['channel'],cents:number,transactionId:string){return repo.scoped(workspace,async tx=>{await tx.execute(sql`SELECT pg_advisory_xact_lock(450211)`);const row=(await tx.execute(sql`SELECT document FROM membership_orders WHERE id=${id} FOR UPDATE`)).rows[0];const o=row?.document as Order|undefined;if(!o||o.channel!==channel||o.plan.priceCents!==cents||!transactionId)throw new DomainError('PAYMENT_MISMATCH','支付订单校验失败',400);if(o.status==='paid'){if(o.transactionId!==transactionId)throw new DomainError('PAYMENT_MISMATCH','支付流水不匹配',400);return o;}const m=(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${o.userId} FOR UPDATE`)).rows[0]?.document as Membership|undefined;const base=m?.status==='active'?Math.max(Date.now(),Date.parse(m.expiresAt)):Date.now();const next:Membership={plan:o.plan,status:'active',expiresAt:new Date(base+o.plan.days*86400000).toISOString()};o.status='paid';delete o.closedAt;o.transactionId=transactionId;o.paidAt=new Date().toISOString();await tx.execute(sql`INSERT INTO memberships VALUES(${o.userId},${workspace},${JSON.stringify(next)}::jsonb) ON CONFLICT(user_id) DO UPDATE SET document=excluded.document WHERE memberships.workspace_id=${workspace}`);await tx.execute(sql`UPDATE membership_orders SET status='paid',document=${JSON.stringify(o)}::jsonb WHERE id=${id}`);await audit(tx,'membership.paid',id,channel);return o;});}
-  return {status,requireFeature,claimModelRequest,finishModelRequest,modelRequest,plans,usersPage,ordersPage,savePlan,setMembership,revoke,createOrder,closeOrder,order,orders,dashboard,settle};
+  return {status,requireFeature,claimModelRequest,finishModelRequest,modelRequest,takeQueuedTextRequest,markInterruptedTextRequestsUnknown,plans,usersPage,ordersPage,savePlan,setMembership,revoke,createOrder,closeOrder,order,orders,dashboard,settle};
 }
