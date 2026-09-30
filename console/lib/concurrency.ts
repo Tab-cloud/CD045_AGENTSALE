@@ -1,8 +1,8 @@
 // The Web deployment runs one Next process. Keep admission synchronous so a
 // rejected request never reserves quota or starts a paid provider operation.
-export type Lane = 'modelInput' | 'text' | 'image' | 'videoSubmit' | 'videoPoll' | 'audio' | 'asset' | 'sms' | 'payment';
-const modelLanes = new Set<Lane>(['text', 'image', 'videoSubmit', 'videoPoll', 'audio', 'asset']);
-const limits: Record<Lane, number> = {modelInput: 8, text: 3, image: 2, videoSubmit: 2, videoPoll: 1, audio: 2, asset: 2, sms: 1, payment: 2};
+export type Lane = 'modelInput' | 'text' | 'textStream' | 'image' | 'videoSubmit' | 'videoPoll' | 'audio' | 'asset' | 'sms' | 'payment';
+const modelLanes = new Set<Lane>(['text', 'textStream', 'image', 'videoSubmit', 'videoPoll', 'audio', 'asset']);
+const limits: Record<Lane, number> = {modelInput: 8, text: 3, textStream: 6, image: 2, videoSubmit: 2, videoPoll: 1, audio: 2, asset: 2, sms: 1, payment: 2};
 
 export class ConcurrencyGate {
   private readonly active = new Map<string, number>();

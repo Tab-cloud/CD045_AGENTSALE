@@ -22,10 +22,54 @@ export const videoGenerationSchema=z.object({action:z.literal('video.generate'),
 export const videoPollSchema=z.object({action:z.literal('video.poll'),id:z.string().uuid()}).strict();
 export const audioSpeechSchema=z.object({action:z.literal('audio.speech'),id:z.string().uuid(),text:z.string().trim().min(1).max(600)}).strict();
 
-export async function generateText(config:SecretSettings,request:TextGeneration,transport:typeof requestBytes=requestBytes){
+function textStreamDecoder(fallbackModel:string,onDelta?:(delta:string)=>void){
+  const decoder=new TextDecoder('utf-8',{fatal:true});
+  let pending='',text='',model=fallbackModel,usage:unknown=null,done=false,finishReason:string|undefined;
+  function eventData(event:string){
+    const data=event.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
+    if(!data||done)return;
+    if(data==='[DONE]'){done=true;return;}
+    let chunk:unknown;
+    try{chunk=JSON.parse(data);}catch{throw new FlowError('MODEL_RESPONSE','模型流返回无效事件');}
+    const value=chunk as {choices?:{delta?:{content?:unknown;refusal?:unknown};finish_reason?:unknown}[];model?:unknown;usage?:unknown;error?:unknown};
+    if(value.error)throw new FlowError('MODEL_STREAM_ERROR','模型生成过程中返回错误，结果无法确认',true);
+    if(typeof value.model==='string')model=value.model;
+    if(value.usage!=null)usage=value.usage;
+    const choice=value.choices?.[0];
+    if(choice?.delta?.refusal||choice?.finish_reason==='content_filter')throw new FlowError('MODEL_REFUSAL','模型拒绝该请求');
+    if(choice?.finish_reason==='length')throw new FlowError('MODEL_TRUNCATED','模型输出达到长度上限');
+    if(typeof choice?.finish_reason==='string')finishReason=choice.finish_reason;
+    if(typeof choice?.delta?.content==='string'){
+      text+=choice.delta.content;
+      if(choice.delta.content)onDelta?.(choice.delta.content);
+    }
+    else if(choice?.delta?.content!=null)throw new FlowError('MODEL_RESPONSE','模型流返回不支持的文本格式');
+  }
+  return {
+    feed(bytes:Buffer,end=false){
+      try{pending+=decoder.decode(bytes,{stream:!end});}catch{throw new FlowError('MODEL_RESPONSE','模型流包含无效文本编码');}
+      let boundary;
+      while((boundary=/\r?\n\r?\n/.exec(pending))){
+        const event=pending.slice(0,boundary.index);
+        pending=pending.slice(boundary.index+boundary[0].length);
+        eventData(event);
+      }
+      if(end&&pending.trim())eventData(pending);
+    },
+    result(){
+      if(!done)throw new FlowError('MODEL_STREAM_INCOMPLETE','模型流中断，结果无法确认',true);
+      if(!finishReason||!text.trim())throw new FlowError('MODEL_RESPONSE','模型未返回完整有效文本');
+      text=text.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
+      if(!text)throw new FlowError('MODEL_RESPONSE','模型未返回有效文本');
+      return {text,model,usage};
+    }
+  };
+}
+
+export async function generateText(config:SecretSettings,request:TextGeneration,transport:typeof requestBytes=requestBytes,onDelta?:(delta:string)=>void){
   assertProvider(config,false);
   const messages=request.messages.map(message=>({...message}));
-  const body:Record<string,unknown>={model:config.model,messages};
+  const body:Record<string,unknown>={model:config.model,messages,stream:true};
   if(request.jsonSchema){
     if(config.format==='json_schema')body.response_format={type:'json_schema',json_schema:{name:'desktop_output',strict:true,schema:request.jsonSchema}};
     else if(config.format==='json_object')body.response_format={type:'json_object'};
@@ -38,21 +82,22 @@ export async function generateText(config:SecretSettings,request:TextGeneration,
     body.reasoning_split=true;
     if(config.model==='MiniMax-M3')body.thinking={type:'disabled'};
   }
+  const stream=textStreamDecoder(config.model,onDelta);
+  let received=false;
   const response=await transport(config.baseUrl.replace(/\/$/,'')+'/chat/completions',{
-    method:'POST',headers:{'Content-Type':'application/json',...(config.apiKey?{Authorization:'Bearer '+config.apiKey}:{})},
-    body:JSON.stringify(body),local:config.localModel,trustedMiniMax:config.protocol==='minimax',timeout:120000,maxBytes:8_000_000
+    method:'POST',headers:{'Content-Type':'application/json',Accept:'text/event-stream',...(config.apiKey?{Authorization:'Bearer '+config.apiKey}:{})},
+    body:JSON.stringify(body),local:config.localModel,trustedMiniMax:config.protocol==='minimax',idleTimeout:600_000,maxDuration:1_800_000,maxBytes:8_000_000,collectBody:false,
+    onChunk:(chunk,status,headers)=>{
+      if(status!==200||!/^text\/event-stream(?:;|$)/i.test(String(headers['content-type']||'')))return;
+      received=true;
+      stream.feed(chunk);
+    }
   });
   if(response.status!==200)throw new FlowError('MODEL_HTTP',`模型服务返回 HTTP ${response.status}，请检查模型、权限及额度`,response.status===429||response.status>=500);
-  let data:unknown;
-  try{data=JSON.parse(response.body.toString());}catch{throw new FlowError('MODEL_RESPONSE','模型服务未返回有效 JSON');}
-  const result=data as {choices?:{message?:{content?:unknown;refusal?:unknown};finish_reason?:string}[];model?:unknown;usage?:unknown};
-  const choice=result.choices?.[0];
-  if(choice?.finish_reason==='length')throw new FlowError('MODEL_TRUNCATED','模型输出达到长度上限');
-  if(choice?.message?.refusal)throw new FlowError('MODEL_REFUSAL','模型拒绝该请求');
-  if(typeof choice?.message?.content!=='string'||!choice.message.content.trim())throw new FlowError('MODEL_RESPONSE','模型未返回有效文本');
-  const text=choice.message.content.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
-  if(!text)throw new FlowError('MODEL_RESPONSE','模型未返回有效文本');
-  return {text,model:typeof result.model==='string'?result.model:config.model,usage:result.usage??null};
+  if(!/^text\/event-stream(?:;|$)/i.test(String(response.headers['content-type']||'')))throw new FlowError('MODEL_STREAM_UNSUPPORTED','模型服务未提供流式输出，请管理员测试或更换接口');
+  if(!received)stream.feed(response.body);
+  stream.feed(Buffer.alloc(0),true);
+  return stream.result();
 }
 
 export async function generateSpeech(config:SecretSettings,text:string,transport:typeof requestBytes=requestBytes){

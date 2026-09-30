@@ -10,6 +10,7 @@ import {streamModelFile,storeModelFile} from '../../../../lib/model-files';
 import {busyResponse,concurrencyGate,type Lane} from '../../../../lib/concurrency';
 import {session,platform} from '../../../../lib/platform';
 import {startModelWorker} from '../../../../lib/model-job-queue';
+import {subscribeText} from '../../../../lib/model-text-stream';
 import {jsonBody} from '../../../../lib/server-access';
 
 export const runtime='nodejs';
@@ -22,10 +23,36 @@ export async function GET(request:Request){
     if(requestId){
       const id=z.string().uuid().parse(requestId),entry=await p.members.modelRequest(id,user.id);
       if(entry.capability!=='text.generate')return Response.json({code:'MODEL_REQUEST_CONFLICT',message:'模型请求能力不匹配'},{status:409});
-      if(entry.status==='completed')return entry.result?Response.json(entry.result,{headers:{'Cache-Control':'no-store'}}):Response.json({code:'MODEL_RESULT_EXPIRED',message:'历史模型响应已过保留期'},{status:410});
-      if(entry.status==='failed')return Response.json(entry.result||{code:'MODEL_REQUEST_FAILED',message:'模型请求失败'},{status:422});
-      if(entry.status==='unknown')return Response.json(entry.result||{code:'MODEL_REQUEST_UNCERTAIN',message:'模型提交结果未知，不会重复提交'},{status:409});
-      return Response.json({id,status:'processing'},{headers:{'Cache-Control':'no-store'}});
+      const release=concurrencyGate.tryAcquire('textStream',user.id);
+      if(!release)return busyResponse();
+      startModelWorker();
+      const encoder=new TextEncoder();
+      let closed=false,unsubscribe=()=>{},heartbeat:ReturnType<typeof setInterval>|undefined;
+      const cleanup=()=>{if(closed)return;closed=true;if(heartbeat)clearInterval(heartbeat);unsubscribe();release();};
+      const stream=new ReadableStream<Uint8Array>({
+        start(controller){
+          const send=(event:string,value:unknown)=>{if(!closed)controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`));};
+          const finish=(event:string,value:unknown)=>{if(closed)return;send(event,value);cleanup();controller.close();};
+          const inspect=async(current:typeof entry)=>{
+            if(closed)return;
+            if(current.status==='completed')return current.result?.text?finish('completed',current.result):finish('failed',{code:'MODEL_RESULT_EXPIRED',message:'历史模型响应已过保留期'});
+            if(current.status==='failed'||current.status==='unknown')return finish('failed',current.result||{code:'MODEL_REQUEST_UNCERTAIN',message:'模型请求结果无法确认'});
+          };
+          unsubscribe=subscribeText(id,event=>{
+            if(event.type==='snapshot'||event.type==='delta')send(event.type,{text:event.text});
+            else finish(event.type,event.type==='completed'?{text:event.text}:{code:'MODEL_REQUEST_UNCERTAIN',message:event.message});
+          });
+          heartbeat=setInterval(()=>{
+            if(closed)return;
+            controller.enqueue(encoder.encode(': keepalive\n\n'));
+            void p.members.modelRequest(id,user.id).then(inspect).catch(()=>finish('failed',{code:'MODEL_STREAM_ERROR',message:'无法查询模型任务状态'}));
+          },15_000);
+          send('status',{id,status:'processing'});
+          void inspect(entry).then(()=>closed?undefined:p.members.modelRequest(id,user.id).then(inspect)).catch(()=>finish('failed',{code:'MODEL_STREAM_ERROR',message:'无法查询模型任务状态'}));
+        },
+        cancel(){cleanup();}
+      });
+      return new Response(stream,{headers:{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'}});
     }
     const asset=new URL(request.url).searchParams.get('asset');
     if(asset){

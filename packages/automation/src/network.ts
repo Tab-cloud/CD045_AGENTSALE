@@ -40,7 +40,7 @@ async function publiclyResolvable(hostname:string){
   publicDnsCache.set(hostname,{allowed,expires:Date.now()+300_000});return allowed;
 }
 
-export async function requestBytes(raw:string,options:{method?:string;headers?:Record<string,string>;body?:string|Buffer;local?:boolean;trustedMiniMax?:boolean;trustedDnsResolver?:boolean;timeout?:number;maxBytes?:number;redirects?:number;followRedirects?:boolean}={}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer;url:string}>{
+export async function requestBytes(raw:string,options:{method?:string;headers?:Record<string,string>;body?:string|Buffer;local?:boolean;trustedMiniMax?:boolean;trustedDnsResolver?:boolean;timeout?:number;idleTimeout?:number;maxDuration?:number;maxBytes?:number;redirects?:number;followRedirects?:boolean;collectBody?:boolean;onChunk?:(chunk:Buffer,status:number,headers:http.IncomingHttpHeaders)=>void}={}):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer;url:string}>{
   const url=validUrl(raw,options.local),hostname=url.hostname.replace(/^\[|\]$/g,'');
   let timer:ReturnType<typeof setTimeout>|undefined;
   const records=await Promise.race([lookup(hostname,{all:true}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new FlowError('DNS_TIMEOUT','域名解析超时',true)),5000);})]).finally(()=>clearTimeout(timer));
@@ -51,13 +51,19 @@ export async function requestBytes(raw:string,options:{method?:string;headers?:R
   }
   const selected=records[0];
   return new Promise((resolve,reject)=>{
+    let idleDeadline:ReturnType<typeof setTimeout>|undefined;
+    const resetIdleDeadline=()=>{
+      if(!options.idleTimeout)return;
+      if(idleDeadline)clearTimeout(idleDeadline);
+      idleDeadline=setTimeout(()=>req.destroy(new FlowError('NETWORK_IDLE_TIMEOUT','模型响应长时间没有新数据，结果无法确认',true)),options.idleTimeout);
+    };
     const req=(url.protocol==='https:'?https:http).request(url,{
       method:options.method||'GET',agent:false,headers:{'User-Agent':'LingfengModelGateway/1.0','Accept-Encoding':'identity',...options.headers},
       // Pin the checked address to prevent a second DNS lookup/rebinding.
       lookup:((_host:unknown,opts:unknown,cb:Function)=>{if((opts as {all?:boolean}).all)cb(null,[selected]);else cb(null,selected.address,selected.family);}) as never
     },res=>{
       const chunks:Buffer[]=[];let size=0;
-      res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>(options.maxBytes||2_000_000)){req.destroy(new FlowError('RESPONSE_TOO_LARGE','响应超过允许大小'));return;}chunks.push(chunk);});
+      res.on('data',(chunk:Buffer)=>{resetIdleDeadline();size+=chunk.length;if(size>(options.maxBytes||2_000_000)){req.destroy(new FlowError('RESPONSE_TOO_LARGE','响应超过允许大小'));return;}if(options.collectBody!==false||res.statusCode!==200)chunks.push(chunk);try{options.onChunk?.(chunk,res.statusCode||0,res.headers);}catch(error){req.destroy(error instanceof Error?error:new FlowError('MODEL_RESPONSE','模型流解析失败'));}});
       res.on('error',reject);
       res.on('end',async()=>{
         if(options.followRedirects!==false&&res.statusCode&&res.statusCode>=300&&res.statusCode<400&&res.headers.location){
@@ -68,8 +74,10 @@ export async function requestBytes(raw:string,options:{method?:string;headers?:R
         resolve({status:res.statusCode||0,headers:res.headers,body:Buffer.concat(chunks),url:url.href});
       });
     });
-    const deadline=setTimeout(()=>req.destroy(new FlowError('NETWORK_TIMEOUT','请求超时，未确认的调用不会自动重发',true)),options.timeout||20000);
-    req.on('close',()=>clearTimeout(deadline));
+    const totalTimeout=options.timeout??options.maxDuration??(options.idleTimeout?undefined:20000);
+    const deadline=totalTimeout?setTimeout(()=>req.destroy(new FlowError('NETWORK_TIMEOUT','请求超时，未确认的调用不会自动重发',true)),totalTimeout):undefined;
+    resetIdleDeadline();
+    req.on('close',()=>{if(deadline)clearTimeout(deadline);if(idleDeadline)clearTimeout(idleDeadline);});
     req.on('error',e=>reject(e instanceof FlowError?e:new FlowError('NETWORK_ERROR','网络连接失败，请检查服务或稍后重试',true)));
     if(options.body)req.write(options.body);req.end();
   });

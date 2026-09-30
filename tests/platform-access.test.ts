@@ -69,14 +69,21 @@ it('reserves model quota exactly once for a request ID and rejects conflicting c
  await expect(p.members.claimModelRequest(randomUUID(),account.user.id,'hash-c')).rejects.toMatchObject({code:'QUOTA_EXCEEDED'});
  expect((await p.members.status(account.user.id)).usage).toContainEqual({feature:'model',used:1});
 });
-it('keeps a text result available by its request ID after the submit response has ended',async()=>{
+it('relays each supplier text chunk before completion and keeps the final result by request ID',async()=>{
  const {platform}=await import('../console/lib/platform');const {modelVault}=await import('../console/lib/local-runtime');
  const p=await platform(),admin=await p.auth.require(adminToken,true);
  const login=await auth.POST(req('auth',undefined,{action:'register',username:'asyncmodel',password:'fixture-password-long',desktop:true})),account=await login.json();
  await p.members.savePlan({id:'async-model-test',name:'异步模型测试',priceCents:1,days:1,published:true,limits:{model:1,image:0,video:0}},admin);
  const order=await p.members.createOrder(account.user,'async-model-test','wechat');await p.members.settle(order.id,'wechat',1,'synthetic-async-model');
- let calls=0;
- const upstream=createServer(async(_request,response)=>{calls++;await new Promise(resolve=>setTimeout(resolve,150));response.setHeader('Content-Type','application/json');response.end(JSON.stringify({choices:[{message:{content:'可取回的测试结果'},finish_reason:'stop'}],model:'fixture'}));});
+ let calls=0,releaseLastChunk=()=>{};
+ const lastChunk=new Promise<void>(resolve=>{releaseLastChunk=resolve;});
+ const upstream=createServer(async(_request,response)=>{
+  calls++;response.setHeader('Content-Type','text/event-stream');
+  await new Promise(resolve=>setTimeout(resolve,80));
+  response.write('data: '+JSON.stringify({choices:[{delta:{content:'可取回的'},finish_reason:null}],model:'fixture'})+'\n\n');
+  await lastChunk;
+  response.end('data: '+JSON.stringify({choices:[{delta:{content:'测试结果'},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n');
+ });
  upstream.listen(0,'127.0.0.1');await once(upstream,'listening');
  try{
   const address=upstream.address();if(!address||typeof address==='string')throw new Error('fixture server address');
@@ -85,17 +92,32 @@ it('keeps a text result available by its request ID after the submit response ha
   const id=randomUUID(),input={action:'text.generate',id,messages:[{role:'user',content:'请返回结果'}]};
   const submitted=await models.POST(req('models',account.token,input));
   expect(submitted.status).toBe(200);expect(await submitted.json()).toMatchObject({id,status:'processing'});
-  let result:Response|undefined;
-  for(let attempt=0;attempt<40;attempt++){
-   result=await models.GET(req('models?request='+id,account.token));
-   if((await result.clone().json()).text)break;
-   await new Promise(resolve=>setTimeout(resolve,100));
+  const result=await models.GET(req('models?request='+id,account.token));
+  expect(result.status).toBe(200);expect(result.headers.get('content-type')).toContain('text/event-stream');
+  const reader=result.body!.getReader(),decoder=new TextDecoder();
+  let events='';
+  while(!events.includes('event: delta')){
+   const chunk=await reader.read();expect(chunk.done).toBe(false);events+=decoder.decode(chunk.value,{stream:true});
   }
-  expect(result?.status).toBe(200);expect(await result?.json()).toMatchObject({text:'可取回的测试结果'});
+  expect(events).toContain('可取回的');
+  expect(events).not.toContain('event: completed');
+  await reader.cancel();
+  const resumed=await models.GET(req('models?request='+id,account.token));
+  const resumedReader=resumed.body!.getReader();
+  let resumedEvents='';
+  while(!resumedEvents.includes('event: snapshot')){
+   const chunk=await resumedReader.read();expect(chunk.done).toBe(false);resumedEvents+=decoder.decode(chunk.value,{stream:true});
+  }
+  expect(resumedEvents).toContain('可取回的');
+  releaseLastChunk();
+  while(true){const chunk=await resumedReader.read();if(chunk.done)break;resumedEvents+=decoder.decode(chunk.value,{stream:true});}
+  expect(resumedEvents).toContain('event: completed');expect(resumedEvents).toContain('可取回的测试结果');
+  const replay=await models.GET(req('models?request='+id,account.token));
+  expect(await replay.text()).toContain('可取回的测试结果');
   expect((await models.POST(req('models',account.token,input))).status).toBe(200);
   expect(calls).toBe(1);
   expect((await p.members.status(account.user.id)).usage).toContainEqual({feature:'model',used:1});
- }finally{upstream.close();}
+ }finally{releaseLastChunk();upstream.close();}
 },15000);
 it('delivers a completed model file only to its owner',async()=>{
  const {platform}=await import('../console/lib/platform');const {storeModelFile}=await import('../console/lib/model-files');const {concurrencyGate}=await import('../console/lib/concurrency');

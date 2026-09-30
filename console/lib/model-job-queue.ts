@@ -2,6 +2,7 @@ import {textGenerationSchema,generateText} from '../../packages/automation/src/m
 import {FlowError} from '../../packages/automation/src/types';
 import {modelVault} from './local-runtime';
 import {platform} from './platform';
+import {finishTextStream,publishTextDelta} from './model-text-stream';
 
 // The queue holds encrypted generic model messages for a short time. It never
 // stores desktop research state or decides which Agent step to run next.
@@ -22,14 +23,16 @@ export async function processNextTextRequest(complete:Completion=generateText):P
     if(request.id!==job.id)throw new FlowError('MODEL_INPUT','模型任务编号与保存的请求不一致');
     const config=await vault.get();
     submitted=true;
-    const result=await complete(config,request);
+    const result=await complete(config,request,undefined,delta=>publishTextDelta(job.id,delta));
     await p.members.finishModelRequest(job.id,job.userId,result);
+    finishTextStream(job.id,{text:result.text});
   }catch(error){
     const uncertain=submitted&&(!FlowError.is(error)||error.retryable||['NETWORK_TIMEOUT','NETWORK_ERROR','DNS_TIMEOUT'].includes(error.code));
     const status=uncertain?'unknown':'failed';
     const result={code:uncertain?'MODEL_REQUEST_UNCERTAIN':'MODEL_REQUEST_FAILED',
       message:uncertain?'模型提交结果无法确认；不会重复提交':'模型请求失败，请检查模型配置或稍后创建新任务'};
     await p.members.finishModelRequest(job.id,job.userId,result,status);
+    finishTextStream(job.id,{message:result.message});
   }
   return true;
 }

@@ -35,7 +35,7 @@ export function AdminPanel(){
   const presetDescription=modelPresets.find(preset=>preset.id===selectedPreset)?.description;
   return <div className="admin-panel">{error&&<p role="alert" className="feedback error">{error}</p>}{notice&&<p role="status" className="feedback">{notice}</p>}{data&&<form id="services" key={data.settings.revision} onSubmit={save}>
     <div className="sectionrow"><h2>文本模型</h2><span className="status">{data.settings.verifiedAt?'已验证 · '+new Date(data.settings.verifiedAt).toLocaleString():'尚未验证'}</span></div>
-    <p className="muted small">此处仅配置 Agent 使用的模型接口。公开网页搜索与正文读取由 Agent 在任务中调用，无需另填搜索密钥；密钥明文不会返回浏览器。</p>
+    <p className="muted small">此处仅配置 Agent 使用的模型接口。文本接口须支持 OpenAI 兼容的流式响应；保存后请测试连接。公开网页搜索与正文读取由 Agent 在任务中调用，无需另填搜索密钥；密钥明文不会返回浏览器。</p>
     <div className="model-preset-row spaced">
       <label className="field model-preset-field">服务商预设<select name="preset" value={selectedPreset} onChange={choosePreset}><option value="custom">自定义配置</option>{modelPresets.map(preset=><option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
       <p className="model-preset-help">{presetDescription?`${presetDescription} `:''}选择后填入参考参数；密钥需自行配置，保存前可修改。</p>
