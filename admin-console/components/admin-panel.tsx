@@ -2,14 +2,15 @@
 import {useEffect,useState,type ChangeEvent,type FormEvent} from 'react';
 import type {PublicSettings,Settings} from '@agentsale/automation';
 import {matchingModelPreset,modelPresets,protocolForModelEndpoint} from './model-presets';
+import {VoicePicker} from './voice-picker';
 
 type AdminData={settings:PublicSettings};
 
 export function AdminPanel(){
-  const [data,setData]=useState<AdminData|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[selectedPreset,setSelectedPreset]=useState('custom');
-  async function load(){const response=await fetch('/api/v1/admin',{cache:'no-store'}),body=await response.json();if(!response.ok)throw new Error(body.message);setData(body);setSelectedPreset(matchingModelPreset(body.settings));}
-  useEffect(()=>{void load().catch(e=>setError(e.message));},[]);
-  async function post(body:unknown){setBusy(true);setError('');setNotice('');try{const response=await fetch('/api/v1/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),result=await response.json();if(!response.ok)throw new Error(result.message);setNotice(result.message);await load();}catch(e){setError(e instanceof Error?e.message:'管理操作失败');}finally{setBusy(false);}}
+  const [data,setData]=useState<AdminData|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[selectedPreset,setSelectedPreset]=useState('custom'),[voicesText,setVoicesText]=useState('');
+  async function load(resetForm=false){const response=await fetch('/api/v1/admin',{cache:'no-store'}),body=await response.json();if(!response.ok)throw new Error(body.message);setData(body);if(resetForm){setSelectedPreset(matchingModelPreset(body.settings));setVoicesText(body.settings.minimax.voices.map((voice:{id:string;name:string})=>voice.id+' | '+voice.name).join('\n'));}}
+  useEffect(()=>{void load(true).catch(e=>setError(e.message));},[]);
+  async function post(body:unknown){setBusy(true);setError('');setNotice('');try{const response=await fetch('/api/v1/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),result=await response.json();if(!response.ok)throw new Error(result.message);setNotice(result.message);await load(Boolean(result.settings));}catch(e){setError(e instanceof Error?e.message:'管理操作失败');}finally{setBusy(false);}}
   async function save(event:FormEvent<HTMLFormElement>){
     event.preventDefault();if(!data)return;
     const form=new FormData(event.currentTarget),{hasApiKey:_,hasMinimaxKey:__,hasAggregateKey:___,verifiedAt:____,revision:_____,...stored}=data.settings;
@@ -47,7 +48,7 @@ export function AdminPanel(){
       <p className="muted small">独立音频接口使用下方密钥，可与聚合连接同时启用；调用顺序在“服务路由”配置。</p>
       <label className="field">语音模型 ID<input name="speechModel" required maxLength={100} defaultValue={data.settings.minimax.speechModel}/></label>
       <label className="field">独立音频 API 密钥<input name="minimaxKey" type="password" autoComplete="new-password" placeholder={data.settings.hasMinimaxKey?'已保存，留空保持':'输入独立音频密钥'}/></label>
-      <label className="field">可用音色列表（每行：ID | 名称）<textarea name="voices" required rows={4} defaultValue={data.settings.minimax.voices.map(voice=>voice.id+' | '+voice.name).join('\n')}/></label>
+      <VoicePicker providerId="standard" hasSavedKey={data.settings.hasMinimaxKey} value={voicesText} onChange={setVoicesText} disabled={busy}/>
       <label className="check-field"><input name="clearMinimaxKey" type="checkbox"/>清除已保存的音频密钥</label>
     </div>
     <div className="actions spaced"><button className="btn primary" disabled={busy}>保存普通模型配置</button><button className="btn" type="button" disabled={busy} onClick={()=>post({action:'verify'})}>测试当前文本连接</button></div>

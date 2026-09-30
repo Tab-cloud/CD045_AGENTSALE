@@ -143,6 +143,20 @@ body.dark .minimax-capability-card.unavailable{border-color:#6e4d43;background:#
 .model-preset-row{display:flex;align-items:flex-end;gap:14px 18px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--subtle)}
 .model-preset-field{width:min(100%,280px);flex:none}
 .model-preset-help{flex:1;min-width:min(100%,230px);padding-bottom:7px;color:var(--muted);font-size:11px;line-height:1.6}
+.voice-picker{grid-column:1/-1;min-width:0}
+.voice-picker-actions,.voice-picker-summary{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin-top:10px}
+.voice-picker-actions .small,.voice-picker-summary span{color:var(--muted);font-size:11px}
+.voice-picker-results{margin-top:12px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--subtle)}
+.voice-picker-summary{margin:0 0 12px;justify-content:space-between;font-size:12px}
+.voice-picker-results>.field{max-width:420px}
+.voice-picker-list{max-height:300px;overflow:auto;margin-top:10px;border-top:1px solid var(--line)}
+.voice-picker-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 2px;border-bottom:1px solid var(--line)}
+.voice-picker-row>div{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;min-width:0;font-size:12px}
+.voice-picker-row code{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.voice-picker-name{font-weight:620}
+.voice-picker-source{padding:2px 6px;border-radius:5px;background:var(--selected);color:var(--primary);font-size:10px}
+.voice-picker-row .btn{min-height:30px;padding:5px 10px}
+.voice-picker-row .btn:disabled{opacity:.55;cursor:default}
 .admin-panel .connector-block{padding:17px 0;border-top:1px solid var(--line)}
 .admin-panel .connector-block:first-of-type{margin-top:18px}
 .routing-list{display:grid;gap:8px;margin-top:12px}.routing-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--subtle)}.routing-row .actions{gap:6px}.routing-row .btn{padding:7px 10px;min-height:34px}.routing-row .btn:disabled{opacity:.45;cursor:not-allowed}

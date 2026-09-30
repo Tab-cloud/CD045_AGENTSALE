@@ -28,7 +28,7 @@ it('rejects excess model input before reserving member usage',async()=>{
   expect((await p.members.status(member.id)).usage).toEqual(before);
  }finally{first?.();second?.();}
 });
-it('blocks non-admin settings and the legacy shared workspace',async()=>{for(const endpoint of [config,creativeConfig,billing,dashboard])expect((await endpoint.GET(req('test',memberToken))).status).toBe(403);expect((await config.GET(req('admin',adminToken))).status).toBe(200);const overview=await dashboard.GET(req('dashboard',adminToken));expect(overview.status).toBe(200);expect((await overview.json()).totals).toMatchObject({users:1,activeMembers:0});});
+it('blocks non-admin settings and the legacy shared workspace',async()=>{for(const endpoint of [config,creativeConfig,billing,dashboard])expect((await endpoint.GET(req('test',memberToken))).status).toBe(403);expect((await config.POST(req('admin',memberToken,{action:'listVoices',providerId:'standard'}))).status).toBe(403);expect((await config.POST(req('admin',undefined,{action:'listVoices',providerId:'standard'}))).status).toBe(401);expect((await config.GET(req('admin',adminToken))).status).toBe(200);const overview=await dashboard.GET(req('dashboard',adminToken));expect(overview.status).toBe(200);expect((await overview.json()).totals).toMatchObject({users:1,activeMembers:0});});
 it('loads member accounts only through the paged administrator query',async()=>{
  const settings=await billing.GET(req('membership-admin',adminToken));
  expect(settings.status).toBe(200);

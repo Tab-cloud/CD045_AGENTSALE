@@ -38,6 +38,27 @@ it('keeps incomplete streams and truncated answers out of completed results',asy
   const truncated:typeof requestBytes=async(url)=>({status:200,headers:{'content-type':'text/event-stream'},body:Buffer.from(events+'data: '+JSON.stringify({choices:[{delta:{},finish_reason:'length'}]})+'\n\ndata: [DONE]\n\n'),url});
   await expect(generateText(config,request(),truncated)).rejects.toMatchObject({code:'MODEL_TRUNCATED'});
 });
+it('accepts a MiniMax stream that cleanly ends after finish_reason stop without a DONE sentinel',async()=>{
+  const combined={...config,aggregateKey:'minimax-key',minimax:{...config.minimax,aggregate:true,textModel:'MiniMax-M3'}};
+  const events='data: '+JSON.stringify({model:'MiniMax-M3',choices:[{delta:{content:'{"ready":'},finish_reason:null}]})+'\n\n'
+    +'data: '+JSON.stringify({choices:[{delta:{content:'true}'},finish_reason:'stop'}],base_resp:{status_code:0}})+'\n\n';
+  const transport:typeof requestBytes=async(url,options)=>{
+    const headers={'content-type':'text/event-stream; charset=utf-8'};
+    const bytes=Buffer.from(events);
+    for(const chunk of [bytes.subarray(0,25),bytes.subarray(25)])options.onChunk?.(chunk,200,headers);
+    return {status:200,headers,body:Buffer.alloc(0),url};
+  };
+  await expect(generateText(combined,{...request(),providerId:'minimax'},transport)).resolves.toMatchObject({text:'{"ready":true}',model:'MiniMax-M3'});
+});
+it('reports a MiniMax business error instead of calling it an interrupted stream',async()=>{
+  const combined={...config,aggregateKey:'minimax-key',minimax:{...config.minimax,aggregate:true,textModel:'MiniMax-M3'}};
+  const transport:typeof requestBytes=async(url,options)=>{
+    const headers={'content-type':'text/event-stream'};
+    options.onChunk?.(Buffer.from('data: '+JSON.stringify({base_resp:{status_code:1004,status_msg:'sensitive provider text'}})+'\n\n'),200,headers);
+    return {status:200,headers,body:Buffer.alloc(0),url};
+  };
+  await expect(generateText(combined,{...request(),providerId:'minimax'},transport)).rejects.toMatchObject({code:'PROVIDER_UNAVAILABLE',message:'MiniMax 返回错误码 1004：请检查 API 密钥及模型权限',retryable:false});
+});
 it('preserves the provider speech response byte for byte',async()=>{
   const audio=Buffer.concat([Buffer.from('ID3'),Buffer.alloc(12,1)]);
   let authorization='',sent:any;
@@ -49,6 +70,10 @@ it('preserves the provider speech response byte for byte',async()=>{
   expect(sent.voice_setting).toMatchObject({voice_id:config.minimax.voices[0].id,speed:1.2});
   expect(sent.audio_setting.bitrate).toBe(128000);
   await expect(generateSpeech({...config,independentAudioEnabled:true,minimaxKey:'fixture-secret'},'你好','forbidden','standard',{},transport)).rejects.toMatchObject({code:'AUDIO_VOICE'});
+});
+it('allows audio routing to continue when an account explicitly lacks the selected voice',async()=>{
+  const rejected:typeof requestBytes=async(url)=>({status:200,headers:{},body:Buffer.from(JSON.stringify({base_resp:{status_code:2042,status_msg:'no access'}})),url});
+  await expect(generateSpeech({...config,independentAudioEnabled:true,minimaxKey:'fixture-secret'},'你好',config.minimax.voices[0].id,'standard',{},rejected)).rejects.toMatchObject({code:'PROVIDER_UNAVAILABLE',retryable:false});
 });
 it('routes aggregate text with its own credential and only marks explicit rejection safe for fallback',async()=>{
   const combined={...config,apiKey:'ordinary-key',aggregateKey:'minimax-key',minimax:{...config.minimax,aggregate:true,textModel:'MiniMax-M3'}};

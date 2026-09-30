@@ -25,7 +25,7 @@ export const videoGenerationSchema=z.object({action:z.literal('video.generate'),
 export const videoPollSchema=z.object({action:z.literal('video.poll'),id:z.string().uuid()}).strict();
 export const audioSpeechSchema=z.object({action:z.literal('audio.speech'),providerId:z.enum(['standard','minimax']),id:z.string().uuid(),text:z.string().trim().min(1).max(600),voiceId:z.string().min(1).max(100),parameters:mediaParameters.optional()}).strict();
 
-function textStreamDecoder(fallbackModel:string,onDelta?:(delta:string)=>void){
+function textStreamDecoder(fallbackModel:string,minimax:boolean,onDelta?:(delta:string)=>void){
   const decoder=new TextDecoder('utf-8',{fatal:true});
   let pending='',text='',model=fallbackModel,usage:unknown=null,done=false,finishReason:string|undefined;
   function eventData(event:string){
@@ -34,8 +34,17 @@ function textStreamDecoder(fallbackModel:string,onDelta?:(delta:string)=>void){
     if(data==='[DONE]'){done=true;return;}
     let chunk:unknown;
     try{chunk=JSON.parse(data);}catch{throw new FlowError('MODEL_RESPONSE','模型流返回无效事件');}
-    const value=chunk as {choices?:{delta?:{content?:unknown;refusal?:unknown};finish_reason?:unknown}[];model?:unknown;usage?:unknown;error?:unknown};
+    if(!chunk||typeof chunk!=='object'||Array.isArray(chunk))throw new FlowError('MODEL_RESPONSE','模型流返回无效事件');
+    const value=chunk as {choices?:{delta?:{content?:unknown;refusal?:unknown};finish_reason?:unknown}[];model?:unknown;usage?:unknown;error?:unknown;base_resp?:{status_code?:unknown}};
     if(value.error)throw new FlowError('MODEL_STREAM_ERROR','模型生成过程中返回错误，结果无法确认',true);
+    if(minimax&&value.base_resp?.status_code!==undefined&&value.base_resp.status_code!==0){
+      const code=value.base_resp.status_code;
+      if(typeof code!=='number'||!Number.isInteger(code))throw new FlowError('MODEL_RESPONSE','MiniMax 返回无效的业务状态');
+      const reason=code===1004||code===2049?'请检查 API 密钥及模型权限':code===1008?'请检查供应商余额':code===1002||code===2056?'请检查供应商额度或调用频率':'请检查模型配置或供应商状态';
+      const rejectedBeforeExecution=[1002,1004,1008,1041,2013,2049,2056].includes(code)&&!text;
+      const uncertain=[1000,1001,1024,1033].includes(code);
+      throw new FlowError(rejectedBeforeExecution?'PROVIDER_UNAVAILABLE':'MODEL_PROVIDER_ERROR','MiniMax 返回错误码 '+code+'：'+reason,uncertain);
+    }
     if(typeof value.model==='string')model=value.model;
     if(value.usage!=null)usage=value.usage;
     const choice=value.choices?.[0];
@@ -60,8 +69,10 @@ function textStreamDecoder(fallbackModel:string,onDelta?:(delta:string)=>void){
       if(end&&pending.trim())eventData(pending);
     },
     result(){
-      if(!done)throw new FlowError('MODEL_STREAM_INCOMPLETE','模型流中断，结果无法确认',true);
-      if(!finishReason||!text.trim())throw new FlowError('MODEL_RESPONSE','模型未返回完整有效文本');
+      // Some OpenAI-compatible providers close a completed SSE stream after
+      // finish_reason=stop without sending the optional [DONE] sentinel.
+      if(!done&&finishReason!=='stop')throw new FlowError('MODEL_STREAM_INCOMPLETE','模型流中断，结果无法确认',true);
+      if(finishReason!=='stop'||!text.trim())throw new FlowError('MODEL_RESPONSE','模型未返回完整有效文本');
       text=text.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
       if(!text)throw new FlowError('MODEL_RESPONSE','模型未返回有效文本');
       return {text,model,usage};
@@ -89,7 +100,7 @@ export async function generateText(config:SecretSettings,request:TextGeneration,
     body.reasoning_split=true;
     if(config.model==='MiniMax-M3')body.thinking={type:'disabled'};
   }
-  const stream=textStreamDecoder(config.model,onDelta);
+  const stream=textStreamDecoder(config.model,config.protocol==='minimax',onDelta);
   let received=false;
   const response=await transport(config.baseUrl.replace(/\/$/,'')+'/chat/completions',{
     method:'POST',headers:{'Content-Type':'application/json',Accept:'text/event-stream',...(config.apiKey?{Authorization:'Bearer '+config.apiKey}:{})},
@@ -120,6 +131,11 @@ export async function generateSpeech(config:SecretSettings,text:string,voiceId:s
   });
   if(response.status!==200)throw new FlowError(providerRejectedBeforeExecution(response.status)?'PROVIDER_UNAVAILABLE':'AUDIO_HTTP',`音频模型返回 HTTP ${response.status}`,response.status>=500&&!providerRejectedBeforeExecution(response.status));
   let provider:any;try{provider=JSON.parse(response.body.toString());}catch{throw new FlowError('AUDIO_RESPONSE','音频模型响应格式无效');}
-  if(provider.base_resp?.status_code!==0||typeof provider.data?.audio!=='string')throw new FlowError('AUDIO_RESPONSE','音频模型未完成生成');
+  const code=provider?.base_resp?.status_code;
+  if(code!==0){
+    if([1002,1004,1008,1041,2013,20132,2042,2049,2056].includes(code))throw new FlowError('PROVIDER_UNAVAILABLE','当前音频连接明确拒绝请求');
+    throw new FlowError('AUDIO_RESPONSE','音频模型未完成生成');
+  }
+  if(typeof provider.data?.audio!=='string')throw new FlowError('AUDIO_RESPONSE','音频模型未完成生成');
   return {bytes:response.body,mime:'application/json' as const,model:config.minimax.speechModel};
 }
