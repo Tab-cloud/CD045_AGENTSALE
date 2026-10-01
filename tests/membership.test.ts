@@ -114,6 +114,19 @@ describe('subscription authority',()=>{
   expect(await members.takeQueuedTextRequest()).toBeNull();
   expect(await members.claimModelRequest(id,user.id,'same-input','text.generate','sealed-fixture')).toMatchObject({created:false,status:'unknown'});
  });
+ it('keeps a live long text request submitted while its worker lease advances',async()=>{
+  const {workspace,members,user}=await setup();const order=await members.createOrder(user,'test','wechat');
+  await members.settle(order.id,'wechat',100,'long-model-test');
+  const id=randomUUID();
+  await members.claimModelRequest(id,user.id,'same-input','text.generate','sealed-fixture');
+  await members.takeQueuedTextRequest();
+  await repo.scoped(workspace,tx=>tx.execute(sql`UPDATE model_requests SET updated_at=now()-interval '4 minutes' WHERE id=${id}`));
+  expect(await members.heartbeatSubmittedTextRequest(id,user.id)).toBe(true);
+  await members.markInterruptedTextRequestsUnknown();
+  expect(await members.modelRequest(id,user.id)).toMatchObject({status:'submitting'});
+  await members.finishModelRequest(id,user.id,{text:'完成'});
+  expect(await members.modelRequest(id,user.id)).toMatchObject({status:'completed',result:{text:'完成'}});
+ });
  it('treats -1 as unlimited across model and media while 0 still disables a feature',async()=>{
   const {members,user,admin,plan}=await setup();
   const unlimited={...plan,limits:{model:-1,image:-1,video:-1}};

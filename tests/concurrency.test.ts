@@ -43,6 +43,18 @@ it('bounds large request parsing before the provider admission stage',()=>{
   expect(gate.tryAcquire('modelInput','member-a')).not.toBeNull();
 });
 
+it('keeps text subscriptions separate from provider work while bounding open streams',()=>{
+  const gate=new ConcurrencyGate();
+  const streams=Array.from({length:4},()=>gate.tryAcquire('textStream','member-a'));
+  expect(streams.every(Boolean)).toBe(true);
+  expect(gate.tryAcquire('textStream','member-a')).toBeNull();
+  const modelWork=[gate.tryAcquire('text','member-a'),gate.tryAcquire('image','member-a')];
+  expect(modelWork.every(Boolean)).toBe(true);
+  expect(gate.tryAcquire('audio','member-a')).toBeNull();
+  [...streams,...modelWork].forEach(release=>release?.());
+  expect(gate.tryAcquire('textStream','member-a')).not.toBeNull();
+});
+
 it('returns an explicit retry response when capacity is exhausted',async()=>{
   const response=busyResponse();
   expect(response.status).toBe(429);

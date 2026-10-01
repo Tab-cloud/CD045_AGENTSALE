@@ -53,6 +53,10 @@ export function createMembership(repo:Repository,workspace:string){
     const claimed=(await tx.execute(sql`UPDATE model_requests SET status='submitting',updated_at=now() WHERE id=${String(candidate.id)} AND status='queued' RETURNING id`)).rows;
     return claimed.length?{id:String(candidate.id),userId:String(candidate.user_id),requestBlob:String(candidate.request_blob)}:null;
   });}
+  async function heartbeatSubmittedTextRequest(id:string,userId:string){return repo.scoped(workspace,async tx=>{
+    const rows=(await tx.execute(sql`UPDATE model_requests SET updated_at=now() WHERE id=${id} AND user_id=${userId} AND capability='text.generate' AND status='submitting' RETURNING id`)).rows;
+    return rows.length===1;
+  });}
   async function markInterruptedTextRequestsUnknown(){return repo.scoped(workspace,async tx=>{
     await tx.execute(sql`UPDATE model_requests SET status='unknown',request_blob=NULL,result=${JSON.stringify({code:'MODEL_REQUEST_UNCERTAIN',message:'模型请求中断，结果无法确认；不会重复提交'})}::jsonb,updated_at=now() WHERE workspace_id=${workspace} AND capability='text.generate' AND status='submitting' AND updated_at<now()-interval '3 minutes'`);
   });}
@@ -157,5 +161,5 @@ export function createMembership(repo:Repository,workspace:string){
   }
   // Only called after payment-provider signature and merchant validation. Atomic and replay-safe.
   async function settle(id:string,channel:Order['channel'],cents:number,transactionId:string){return repo.scoped(workspace,async tx=>{await tx.execute(sql`SELECT pg_advisory_xact_lock(450211)`);const row=(await tx.execute(sql`SELECT document FROM membership_orders WHERE id=${id} FOR UPDATE`)).rows[0];const o=row?.document as Order|undefined;if(!o||o.channel!==channel||o.plan.priceCents!==cents||!transactionId)throw new DomainError('PAYMENT_MISMATCH','支付订单校验失败',400);if(o.status==='paid'){if(o.transactionId!==transactionId)throw new DomainError('PAYMENT_MISMATCH','支付流水不匹配',400);return o;}const m=(await tx.execute(sql`SELECT document FROM memberships WHERE user_id=${o.userId} FOR UPDATE`)).rows[0]?.document as Membership|undefined;const base=m?.status==='active'?Math.max(Date.now(),Date.parse(m.expiresAt)):Date.now();const next:Membership={plan:o.plan,status:'active',expiresAt:new Date(base+o.plan.days*86400000).toISOString()};o.status='paid';delete o.closedAt;o.transactionId=transactionId;o.paidAt=new Date().toISOString();await tx.execute(sql`INSERT INTO memberships VALUES(${o.userId},${workspace},${JSON.stringify(next)}::jsonb) ON CONFLICT(user_id) DO UPDATE SET document=excluded.document WHERE memberships.workspace_id=${workspace}`);await tx.execute(sql`UPDATE membership_orders SET status='paid',document=${JSON.stringify(o)}::jsonb WHERE id=${id}`);await audit(tx,'membership.paid',id,channel);return o;});}
-  return {status,requireFeature,claimModelRequest,finishModelRequest,modelRequest,takeQueuedTextRequest,markInterruptedTextRequestsUnknown,plans,usersPage,ordersPage,savePlan,setMembership,revoke,createOrder,closeOrder,order,orders,dashboard,settle};
+  return {status,requireFeature,claimModelRequest,finishModelRequest,modelRequest,takeQueuedTextRequest,heartbeatSubmittedTextRequest,markInterruptedTextRequestsUnknown,plans,usersPage,ordersPage,savePlan,setMembership,revoke,createOrder,closeOrder,order,orders,dashboard,settle};
 }

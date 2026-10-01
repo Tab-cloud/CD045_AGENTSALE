@@ -16,6 +16,17 @@ export async function processNextTextRequest(complete:Completion=generateText):P
   }
   const job=await p.members.takeQueuedTextRequest();
   if(!job)return false;
+  // The recovery sweep only marks requests unknown after their worker lease
+  // stops advancing. A long but healthy provider stream must remain durable.
+  let heartbeatInFlight=false;
+  const heartbeat=setInterval(()=>{
+    if(heartbeatInFlight)return;
+    heartbeatInFlight=true;
+    void p.members.heartbeatSubmittedTextRequest(job.id,job.userId)
+      .catch(error=>{console.error('Text request lease heartbeat failed',job.id,error);})
+      .finally(()=>{heartbeatInFlight=false;});
+  },30_000);
+  heartbeat.unref();
   let submitted=false;
   try{
     const vault=await modelVault();
@@ -34,6 +45,8 @@ export async function processNextTextRequest(complete:Completion=generateText):P
       message:uncertain?'模型提交结果无法确认；不会重复提交':unavailable?'当前模型连接明确未受理请求，可尝试下一供应商':'模型请求失败，请检查模型配置或稍后创建新任务'};
     await p.members.finishModelRequest(job.id,job.userId,result,status);
     finishTextStream(job.id,{message:result.message,code:result.code,safeToFailover:result.safeToFailover});
+  }finally{
+    clearInterval(heartbeat);
   }
   return true;
 }
