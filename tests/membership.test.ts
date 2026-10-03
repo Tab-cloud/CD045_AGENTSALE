@@ -6,7 +6,7 @@ import {sql} from 'drizzle-orm';
 import {randomUUID} from 'node:crypto';
 let repo:Repository;beforeAll(async()=>{repo=await createRepository();},30000);afterAll(async()=>repo?.close());
 async function setup(){const workspace=randomUUID(),auth=createAuth(repo,workspace),members=createMembership(repo,workspace),admin=await auth.create('administrator','test-long-password','admin'),user=await auth.register('member','test-long-password');const plan:Plan={id:'test',name:'测试套餐',days:30,priceCents:100,published:true,limits:{model:2,image:1,video:0}};await members.savePlan(plan,admin);return {workspace,auth,members,admin,user,plan};}
-const claim=(members:ReturnType<typeof createMembership>,userId:string,capability:'text.generate'|'image.generate'|'video.generate',id=randomUUID())=>members.claimModelRequest(id,userId,'fixture-hash',capability);
+const claim=(members:ReturnType<typeof createMembership>,userId:string,capability:'text.generate'|'image.generate'|'video.generate'|'audio.speech',id=randomUUID())=>members.claimModelRequest(id,userId,'fixture-hash',capability);
 describe('subscription authority',()=>{
  it('keeps mixed-case plan identifiers consistent across saving and manual membership',async()=>{
   const {members,admin,user,plan}=await setup();
@@ -129,20 +129,41 @@ describe('subscription authority',()=>{
  });
  it('treats -1 as unlimited across model and media while 0 still disables a feature',async()=>{
   const {members,user,admin,plan}=await setup();
-  const unlimited={...plan,limits:{model:-1,image:-1,video:-1}};
+  const unlimited={...plan,limits:{model:-1,image:-1,video:-1,audio:-1}};
   expect(planSchema.safeParse({...unlimited,limits:{...unlimited.limits,model:-2}}).success).toBe(false);
   await members.savePlan(unlimited,admin);
   const order=await members.createOrder(user,plan.id,'wechat');
   await members.settle(order.id,'wechat',plan.priceCents,'unlimited-quota');
-  expect((await members.status(user.id)).features).toEqual(['model','image','video']);
+  expect((await members.status(user.id)).features).toEqual(['model','image','video','audio']);
   await Promise.all(Array.from({length:5},()=>claim(members,user.id,'text.generate')));
   await Promise.all(Array.from({length:3},()=>claim(members,user.id,'image.generate')));
   await Promise.all(Array.from({length:2},()=>claim(members,user.id,'video.generate')));
+  await Promise.all(Array.from({length:8},()=>claim(members,user.id,'audio.speech')));
   const usage=(await members.status(user.id)).usage;
-  expect(Object.fromEntries(usage.map(row=>[row.feature,Number(row.used)]))).toMatchObject({model:5,image:3,video:2});
+  expect(Object.fromEntries(usage.map(row=>[row.feature,Number(row.used)]))).toMatchObject({model:5,image:3,video:2,audio:8});
   await members.revoke(user.id,admin);
   await expect(claim(members,user.id,'text.generate')).rejects.toThrow('会员');
   await expect(claim(members,user.id,'image.generate')).rejects.toThrow('会员');
+  await expect(claim(members,user.id,'audio.speech')).rejects.toThrow('会员');
+ });
+ it('reapplies current audio entitlement to an existing membership without changing expiry or paid orders',async()=>{
+  const {workspace,members,user,admin,plan}=await setup();
+  const order=await members.createOrder(user,plan.id,'alipay');
+  await members.settle(order.id,'alipay',plan.priceCents,'audio-entitlement-test');
+  const previous=(await members.status(user.id)).membership!;
+  expect((await members.status(user.id)).features).not.toContain('audio');
+  await members.savePlan({...plan,limits:{...plan.limits,audio:-1}},admin);
+  // The published catalogue does not silently rewrite purchased entitlements.
+  expect((await members.plans()).find(p=>p.id===plan.id)?.limits.audio).toBe(-1);
+  await expect(claim(members,user.id,'audio.speech')).rejects.toThrow('会员');
+  await members.setMembership(user.id,plan.id,previous.expiresAt,'同步当前套餐音频权益',admin);
+  expect((await members.status(user.id)).membership).toMatchObject({expiresAt:previous.expiresAt,plan:{limits:{audio:-1}}});
+  await members.requireFeature(user.id,'audio');
+  await Promise.all(Array.from({length:8},()=>claim(members,user.id,'audio.speech')));
+  expect((await members.order(order.id,user.id)).plan).toEqual(plan);
+  expect((await members.ordersPage(admin,1,'','all')).total).toBe(1);
+  const records=await repo.scoped(workspace,async tx=>(await tx.execute(sql`SELECT summary FROM audit WHERE action='membership.manual_set' AND object_id=${user.id}`)).rows);
+  expect(records.some(r=>String(r.summary).includes('同步当前套餐音频权益'))).toBe(true);
  });
  it('saves daily quotas above the previous caps for every service',async()=>{
   const {members,user,admin,plan}=await setup();

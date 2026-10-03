@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {Readable} from 'node:stream';
 import {z} from 'zod';
-import {textGenerationSchema,imageGenerationSchema,videoGenerationSchema,videoPollSchema,audioSpeechSchema,generateSpeech} from '../../../../../packages/automation/src/model-gateway';
+import {modelRequestSchema,modelInputError,generateSpeech} from '../../../../../packages/automation/src/model-gateway';
 import {assertProvider} from '../../../../../packages/automation/src/providers';
 import {FlowError,minimaxVideoAllowed} from '../../../../../packages/automation/src/types';
 import {requestStream} from '../../../../../packages/automation/src/network';
@@ -120,7 +120,7 @@ export async function GET(request:Request){
       candidate('audio.speech','standard',settings.independentAudioEnabled&&!!settings.minimaxKey,settings.minimax.speechModel,'audio'),
       candidate('audio.speech','minimax',usingBundle&&settings.minimax.enabled,settings.minimax.speechModel,'audio'),
     ].sort((a,b)=>a.id.localeCompare(b.id)||a.priority-b.priority);
-    return Response.json({version:3,constraints:{maxAssets:4},voices:settings.minimax.voices,capabilities},{headers:{'Cache-Control':'no-store'}});
+    return Response.json({version:3,constraints:{maxAssets:4},voices:settings.minimax.voices,capabilities:capabilities.map(item=>item.id==='audio.speech'?{...item,inputLimits:{maxTextCharacters:9999}}:item)},{headers:{'Cache-Control':'no-store'}});
   }catch(error){return failure(error);}
 }
 
@@ -129,7 +129,7 @@ export async function POST(request:Request){
     const user=await session(request,true);
     const releaseInput=concurrencyGate.tryAcquire('modelInput',user.id);
     if(!releaseInput)return busyResponse();
-    const body=await (async()=>{try{return z.union([textGenerationSchema,imageGenerationSchema,videoGenerationSchema,videoPollSchema,audioSpeechSchema]).parse(await jsonBody(request,5_600_000));}finally{releaseInput();}})();
+    const body=await (async()=>{try{return modelRequestSchema.parse(await jsonBody(request,5_600_000));}finally{releaseInput();}})();
     const p=await platform();
     if(body.action==='video.poll'){
       const release=concurrencyGate.tryAcquire('videoPoll',user.id,body.id);
@@ -197,7 +197,7 @@ export async function POST(request:Request){
     }
     }finally{release();}
   }catch(error){
-    if(error instanceof z.ZodError)return Response.json({code:'MODEL_INPUT',message:'模型请求格式无效'},{status:400});
+    if(error instanceof z.ZodError)return Response.json(modelInputError(error),{status:400});
     return failure(error);
   }
 }

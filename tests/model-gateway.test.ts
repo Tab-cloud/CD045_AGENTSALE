@@ -1,11 +1,31 @@
 import {it,expect} from 'vitest';
 import {randomUUID} from 'node:crypto';
-import {generateText,generateSpeech,textGenerationSchema} from '../packages/automation/src/model-gateway';
+import {generateText,generateSpeech,textGenerationSchema,modelRequestSchema,modelInputError} from '../packages/automation/src/model-gateway';
 import {defaults,type SecretSettings} from '../packages/automation/src/types';
 import type {requestBytes} from '../packages/automation/src/network';
 
 const config:SecretSettings={...defaults,baseUrl:'http://127.0.0.1:12345/v1',localModel:true,model:'fixture-model',format:'json_object',apiKey:'',minimaxKey:'',aggregateKey:'',verifiedAt:null,revision:'fixture'};
 const request=()=>textGenerationSchema.parse({action:'text.generate',providerId:'standard',id:randomUUID(),messages:[{role:'system',content:'Desktop-owned task policy'},{role:'user',content:'Summarize fixture'}],jsonSchema:{type:'object',properties:{summary:{type:'string'}},required:['summary'],additionalProperties:false}});
+it('forwards full speech scripts beyond the former business cutoff without changing content',async()=>{
+  const text='Original narration. '.repeat(80);
+  let sent:any;
+  const parsed=modelRequestSchema.parse({action:'audio.speech',providerId:'standard',id:randomUUID(),text,voiceId:config.minimax.voices[0].id});
+  if(parsed.action!=='audio.speech')throw new Error('wrong request');
+  const transport:typeof requestBytes=async(url,options)=>{sent=JSON.parse(String(options.body));return {status:200,headers:{},body:Buffer.from(JSON.stringify({base_resp:{status_code:0},data:{audio:'494433'}})),url};};
+  await generateSpeech({...config,independentAudioEnabled:true,minimaxKey:'fixture-secret'},parsed.text,parsed.voiceId,parsed.providerId,parsed.parameters,transport);
+  expect(sent.text).toBe(text);
+  expect(sent.text.length).toBeGreaterThan(600);
+});
+it('returns actionable validation fields without echoing script contents',()=>{
+  const parsed=modelRequestSchema.safeParse({action:'audio.speech',providerId:'standard',id:randomUUID(),text:'private script',voiceId:''});
+  expect(parsed.success).toBe(false);
+  if(parsed.success)throw new Error('expected rejection');
+  const error=modelInputError(parsed.error);
+  expect(error.code).toBe('MODEL_INPUT');
+  expect(error.inputErrors.map(issue=>issue.field)).toEqual(['voiceId']);
+  expect(error.message).toContain('voiceId');
+  expect(JSON.stringify(error)).not.toContain('private script');
+});
 it('passes desktop messages unchanged and returns provider text without server business prompts',async()=>{
   let sent:unknown;
   const transport:typeof requestBytes=async(_url,options)=>{sent=JSON.parse(String(options.body));expect(options).toMatchObject({idleTimeout:600_000,maxDuration:1_800_000});return {status:200,headers:{'content-type':'text/event-stream'},body:Buffer.from('data: '+JSON.stringify({model:'fixture-model',choices:[{delta:{content:'{"summary":'}}]})+'\n\ndata: '+JSON.stringify({choices:[{delta:{content:'"完成"}'},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n'),url:_url};};

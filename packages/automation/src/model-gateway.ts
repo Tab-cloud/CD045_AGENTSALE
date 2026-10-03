@@ -23,7 +23,15 @@ export const imageGenerationSchema=z.object({action:z.enum(['image.generate','im
 });
 export const videoGenerationSchema=z.object({action:z.literal('video.generate'),providerId:z.enum(['standard','minimax']),id:z.string().uuid(),prompt:z.string().trim().min(1).max(2500),parameters:mediaParameters.optional()}).strict();
 export const videoPollSchema=z.object({action:z.literal('video.poll'),id:z.string().uuid()}).strict();
-export const audioSpeechSchema=z.object({action:z.literal('audio.speech'),providerId:z.enum(['standard','minimax']),id:z.string().uuid(),text:z.string().trim().min(1).max(600),voiceId:z.string().min(1).max(100),parameters:mediaParameters.optional()}).strict();
+// The gateway authenticates and forwards speech. Text capacity belongs to the
+// selected model, rather than an arbitrary business cutoff. HTTP body budgets
+// still bound memory; never shorten or split the user's script here.
+export const audioSpeechSchema=z.object({action:z.literal('audio.speech'),providerId:z.enum(['standard','minimax']),id:z.string().uuid(),text:z.string().min(1).refine(value=>!!value.trim(),'语音文本不能为空'),voiceId:z.string().min(1).max(100),parameters:mediaParameters.optional()}).strict();
+export const modelRequestSchema=z.discriminatedUnion('action',[textGenerationSchema,imageGenerationSchema,videoGenerationSchema,videoPollSchema,audioSpeechSchema]);
+export function modelInputError(error:z.ZodError){
+  const inputErrors=error.issues.map(issue=>({field:issue.path.map(String).join('.')||'request',code:issue.code,message:issue.message}));
+  return {code:'MODEL_INPUT',message:'模型请求参数无效：'+inputErrors.map(issue=>`${issue.field}：${issue.message}`).join('；'),inputErrors};
+}
 
 function textStreamDecoder(fallbackModel:string,minimax:boolean,onDelta?:(delta:string)=>void){
   const decoder=new TextDecoder('utf-8',{fatal:true});
