@@ -3,6 +3,7 @@ import {useEffect,useState,type FormEvent} from 'react';
 import type {PublicSettings,Settings} from '@agentsale/automation';
 import {minimaxVideoAllowed} from '../../packages/automation/src/types';
 import {VoicePicker} from './voice-picker';
+import {SpeechTest} from './speech-test';
 
 type AdminData={settings:PublicSettings};
 type PlanType=Settings['minimax']['planType'];
@@ -60,6 +61,7 @@ export function MiniMaxPanel(){
         </>}
       </div>
       <p className="footnote">Plus 和未确认密钥类型不能开放视频。Max／Ultra 仅可开放 Hailuo 2.3；H3 等模型需按量付费密钥。音色列表由普通连接和聚合连接共用，所选音色应在实际使用的密钥下可用；桌面调用顺序在“服务路由”设置。</p>
+      <SpeechTest providerId="minimax" settings={data.settings} disabled={busy}/>
       <div className="actions spaced"><button className="btn primary" disabled={busy}>保存 MiniMax 配置</button>{enabled&&<button className="btn" type="button" disabled={busy} onClick={()=>post({action:'verify',providerId:'minimax'})}>测试 MiniMax 文本连接</button>}</div>
     </form>}
   </div>;

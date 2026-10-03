@@ -3,6 +3,7 @@ import {useEffect,useState,type ChangeEvent,type FormEvent} from 'react';
 import type {PublicSettings,Settings} from '@agentsale/automation';
 import {matchingModelPreset,modelPresets,protocolForModelEndpoint} from './model-presets';
 import {VoicePicker} from './voice-picker';
+import {SpeechTest} from './speech-test';
 
 type AdminData={settings:PublicSettings};
 
@@ -51,6 +52,7 @@ export function AdminPanel(){
       <VoicePicker providerId="standard" hasSavedKey={data.settings.hasMinimaxKey} value={voicesText} onChange={setVoicesText} disabled={busy}/>
       <label className="check-field"><input name="clearMinimaxKey" type="checkbox"/>清除已保存的音频密钥</label>
     </div>
+    <SpeechTest providerId="standard" settings={data.settings} disabled={busy}/>
     <div className="actions spaced"><button className="btn primary" disabled={busy}>保存普通模型配置</button><button className="btn" type="button" disabled={busy} onClick={()=>post({action:'verify'})}>测试当前文本连接</button></div>
   </form>}</div>;
 }
