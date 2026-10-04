@@ -52,6 +52,16 @@ it('stores a single MiniMax credential for the aggregate model profile without r
   expect(minimaxVideoAllowed('payg','MiniMax-H3')).toBe(true);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+it('saves and reloads the complete discovered voice list beyond the former 100-voice limit',async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'lingfeng-voices-vault-'));
+ try{
+  const vault=createVault(root),initial=await vault.get();
+  const voices=Array.from({length:150},(_,index)=>({id:`official-${index}`,name:`音色 ${index}`}));
+  const saved=await vault.save({...defaults,minimax:{...defaults.minimax,voices}},undefined,undefined,undefined,initial.revision);
+  expect(saved.minimax.voices).toEqual(voices);
+  expect((await createVault(root).get()).minimax.voices).toEqual(voices);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
 it('keeps ordinary and aggregate connections separate while validating priority lists',async()=>{
  const root=await mkdtemp(path.join(tmpdir(),'lingfeng-routing-vault-'));
  try{

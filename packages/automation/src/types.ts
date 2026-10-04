@@ -4,7 +4,7 @@ const text=(max:number)=>z.string().trim().min(1).max(max);
 export const minimaxVideoModelSchema=z.enum(['MiniMax-Hailuo-2.3','MiniMax-Hailuo-02','T2V-01-Director','T2V-01','MiniMax-H3','MiniMax-H3-Max']);
 export const audioSchema=z.object({
   baseUrl:z.enum(['https://api.minimax.cn/v1','https://api.minimaxi.com/v1','https://api.minimax.io/v1']),
-  speechModel:text(100),voices:z.array(z.object({id:text(100),name:text(100)}).strict()).min(1).max(100),enabled:z.boolean(),
+  speechModel:text(100),voices:z.array(z.object({id:text(100),name:text(100)}).strict()).min(1),enabled:z.boolean(),
   aggregate:z.boolean(),textModel:text(100),planType:z.enum(['unspecified','plus','max','ultra','payg']),imageModel:text(100),videoModel:minimaxVideoModelSchema,videoEnabled:z.boolean()
 }).strict();
 export const routingSchema=z.object({
